@@ -1,0 +1,8 @@
+{
+  "apiUrl": "https://data.gov.il/api/3/action/datastore_search",
+  "modelsResourceId": "5e87a7a1-2f6f-41c1-8aec-7216d52a6cf6",
+  "modelsPackageId": "degem-rechev-wltp",
+  "plateResourceId": "053cea08-09bc-40ec-8f7a-156f0677aff3",
+  "fromYear": 1998,
+  "pageSize": 5000
+}

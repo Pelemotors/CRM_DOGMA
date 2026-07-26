@@ -1,0 +1,8 @@
+אהלן{{name}} 👋
+אני יוצר איתך קשר לגבי רכישת רכב 🚗 🤓
+מהסוכנות יוסי קאר בעפולה
+
+{{manufacturer}} {{model}} {{year}}
+מחיר: {{price}} ₪
+
+https://www.yossicar.co.il/
