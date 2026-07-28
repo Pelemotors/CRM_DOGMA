@@ -1,0 +1,8 @@
+אהלן{{name}} 👋
+אני יוצר איתך קשר מסוכנות עולם הרכב
+{{sourceLine}}
+
+לפי החיפוש שלך{{searchLine}}, מצאתי רכב שעשוי להתאים:
+{{manufacturer}} {{model}} {{year}}
+מחיר: {{price}} ₪
+{{financeLine}}

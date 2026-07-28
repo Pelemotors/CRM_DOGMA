@@ -1,0 +1,12 @@
+{
+  "inApp": {
+    "enabled": true
+  },
+  "whatsapp": {
+    "enabled": true,
+    "onAssignment": true
+  },
+  "browser": {
+    "enabled": false
+  }
+}

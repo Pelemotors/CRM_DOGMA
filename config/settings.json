@@ -1,0 +1,20 @@
+{
+  "defaultCountryCode": "972",
+  "messageDelayMs": 10000,
+  "excelPhoneColumns": [
+    "מספר נייד",
+    "phone",
+    "mobile",
+    "נייד",
+    "טלפון",
+    "tel",
+    "number"
+  ],
+  "excelNameColumns": [
+    "שם מלא",
+    "name",
+    "שם",
+    "full_name",
+    "fullname"
+  ]
+}
