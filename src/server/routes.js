@@ -14,6 +14,7 @@ import {
   getLeadById,
   getStats,
   getTodayQueue,
+  leadAccessibleToUser,
   linkVehicleToLead,
   PIPELINE_STATUSES,
   queryLeads,
@@ -401,8 +402,9 @@ router.post('/api/database/clear', requireManager, (_req, res) => {
 
 router.get('/api/summary', (req, res) => {
   try {
-    const stats = getStats();
-    const today = getTodayQueue();
+    const scope = viewerLeadScope(req);
+    const stats = getStats(scope);
+    const today = getTodayQueue(scope);
     res.json({
       ...stats,
       todayCount: today.queue.length,
@@ -415,9 +417,9 @@ router.get('/api/summary', (req, res) => {
   }
 });
 
-router.get('/api/today', (_req, res) => {
+router.get('/api/today', (req, res) => {
   try {
-    const today = getTodayQueue();
+    const today = getTodayQueue(viewerLeadScope(req));
     res.json({
       followUps: today.followUps.map(mapLeadForUi),
       failed: today.failed.map(mapLeadForUi),
@@ -453,6 +455,7 @@ router.get('/api/leads', (req, res) => {
       sort: req.query.sort,
       dir: req.query.dir,
       columnFilters: parseColumnFilters(req.query),
+      ...viewerLeadScope(req),
     });
 
     res.json({
@@ -483,12 +486,27 @@ router.post('/api/leads', (req, res) => {
     if (interestedVehicleId && !getVehicleById(interestedVehicleId)) {
       return res.status(404).json({ message: 'רכב לא נמצא במלאי' });
     }
+
+    const actor = actorFromReq(req);
+    const isManager = canViewAllCustomers(req);
+    let assignedToUserId = body.assignedToUserId ? String(body.assignedToUserId) : '';
+    let assignedToName = body.assignedToName ? String(body.assignedToName) : '';
+    // נציג — תמיד מוקצה לעצמו; מנהל — אם לא בחר, מוקצה ליוצר
+    if (!isManager || !assignedToUserId) {
+      assignedToUserId = actor.userId;
+      assignedToName = actor.userName;
+    }
+
     const lead = createLead({
       ...body,
       phone,
       budget,
       desiredMonthlyPayment,
       interestedVehicleId,
+      createdByUserId: actor.userId,
+      createdByName: actor.userName,
+      assignedToUserId,
+      assignedToName,
     });
     res.json({ message: 'הלקוח נוצר בהצלחה', lead: mapLeadForUi(lead) });
   } catch (error) {
@@ -499,6 +517,7 @@ router.post('/api/leads', (req, res) => {
 router.post('/api/leads/bulk-delete', (req, res) => {
   try {
     const body = req.body || {};
+    const scope = viewerLeadScope(req);
     let result;
 
     if (body.deleteAllMatching) {
@@ -508,9 +527,14 @@ router.post('/api/leads/bulk-delete', (req, res) => {
         search: body.search || '',
         customerType: body.customerType || '',
         columnFilters: body.columnFilters || {},
+        ...scope,
       });
     } else if (Array.isArray(body.leadIds) && body.leadIds.length) {
-      result = deleteLeadsByIds(body.leadIds);
+      let ids = body.leadIds;
+      if (scope.accessibleByUserId) {
+        ids = ids.filter((id) => leadAccessibleToUser(getLeadById(id), scope.accessibleByUserId));
+      }
+      result = deleteLeadsByIds(ids);
     } else {
       return res.status(400).json({ message: 'לא נבחרו לקוחות למחיקה' });
     }
@@ -527,8 +551,9 @@ router.post('/api/leads/bulk-delete', (req, res) => {
 router.get('/api/leads/:id', (req, res) => {
   try {
     const lead = getLeadById(req.params.id);
-    if (!lead) {
-      return res.status(404).json({ message: 'ליד לא נמצא' });
+    const access = assertLeadAccess(req, lead);
+    if (!access.ok) {
+      return res.status(access.status).json({ message: access.message });
     }
 
     const vehicles = (lead.interestedVehicleIds || [])
@@ -576,6 +601,22 @@ function actorFromReq(req) {
   };
 }
 
+function canViewAllCustomers(req) {
+  return Boolean(req.permissions?.canViewAllCustomers || req.permissions?.isManager);
+}
+
+function assertLeadAccess(req, lead) {
+  if (!lead) return { ok: false, status: 404, message: 'ליד לא נמצא' };
+  if (canViewAllCustomers(req)) return { ok: true };
+  if (leadAccessibleToUser(lead, req.user?.id)) return { ok: true };
+  return { ok: false, status: 403, message: 'אין הרשאה לצפות בלקוח זה' };
+}
+
+function viewerLeadScope(req) {
+  if (canViewAllCustomers(req)) return {};
+  return { accessibleByUserId: req.user?.id || '__none__' };
+}
+
 function enrichAppointments(list) {
   return list.map((a) => mapAppointmentForUi(a, a.leadId ? getLeadById(a.leadId) : null));
 }
@@ -615,9 +656,8 @@ router.get('/api/interests', (req, res) => {
 
 router.get('/api/leads/:id/interests', (req, res) => {
   try {
-    if (!getLeadById(req.params.id)) {
-      return res.status(404).json({ message: 'ליד לא נמצא' });
-    }
+    const access = assertLeadAccess(req, getLeadById(req.params.id));
+    if (!access.ok) return res.status(access.status).json({ message: access.message });
     const items = getInterestsForLead(req.params.id);
     res.json({ items, interests: items });
   } catch (error) {
@@ -627,6 +667,8 @@ router.get('/api/leads/:id/interests', (req, res) => {
 
 router.post('/api/leads/:id/interests', (req, res) => {
   try {
+    const access = assertLeadAccess(req, getLeadById(req.params.id));
+    if (!access.ok) return res.status(access.status).json({ message: access.message });
     const interest = createInterest(req.params.id, req.body || {}, actorFromReq(req));
     res.json({ message: 'התעניינות נוצרה', interest });
   } catch (error) {
@@ -665,8 +707,10 @@ router.get('/api/appointments', (req, res) => {
 
 router.post('/api/leads/:id/appointments', async (req, res) => {
   try {
-    const appt = createAppointment(req.params.id, req.body || {}, actorFromReq(req));
     const lead = getLeadById(req.params.id);
+    const access = assertLeadAccess(req, lead);
+    if (!access.ok) return res.status(access.status).json({ message: access.message });
+    const appt = createAppointment(req.params.id, req.body || {}, actorFromReq(req));
     const actor = actorFromReq(req);
     if (appt.assignedToUserId && appt.assignedToUserId !== actor.userId) {
       await notifyAssignment({
@@ -804,16 +848,14 @@ router.get('/api/agent-home', (req, res) => {
       )
     );
 
-    const today = getTodayQueue();
-    let queue = today.queue.map(mapLeadForUi);
-    if (assigneeFilter) {
-      queue = queue.filter(
-        (l) =>
-          !l.assignedToUserId ||
-          l.assignedToUserId === assigneeFilter ||
-          dueToday.some((a) => a.leadId === l.id)
-      );
-    }
+    const today = getTodayQueue(
+      canSwitchAgentView
+        ? assigneeFilter
+          ? { assignedToUserId: assigneeFilter }
+          : {}
+        : viewerLeadScope(req)
+    );
+    const queue = today.queue.map(mapLeadForUi);
     const interests = listInterests({ status: 'active' }).slice(0, 8);
 
     res.json({
@@ -842,18 +884,30 @@ router.get('/api/agent-home', (req, res) => {
 router.patch('/api/leads/:id', async (req, res) => {
   try {
     const before = getLeadById(req.params.id);
-    const lead = updateLead(req.params.id, req.body || {});
+    const access = assertLeadAccess(req, before);
+    if (!access.ok) {
+      return res.status(access.status).json({ message: access.message });
+    }
+
+    const patch = { ...(req.body || {}) };
+    // רק מנהל יכול לשנות הקצאת נציג
+    if (!canViewAllCustomers(req)) {
+      delete patch.assignedToUserId;
+      delete patch.assignedToName;
+    }
+
+    const lead = updateLead(req.params.id, patch);
     if (!lead) {
       return res.status(404).json({ message: 'ליד לא נמצא' });
     }
     const actor = actorFromReq(req);
     if (
-      req.body?.assignedToUserId &&
-      req.body.assignedToUserId !== before?.assignedToUserId &&
-      req.body.assignedToUserId !== actor.userId
+      patch.assignedToUserId &&
+      patch.assignedToUserId !== before?.assignedToUserId &&
+      patch.assignedToUserId !== actor.userId
     ) {
       await notifyAssignment({
-        assigneeUserId: req.body.assignedToUserId,
+        assigneeUserId: patch.assignedToUserId,
         actorUserId: actor.userId,
         actorName: actor.userName,
         title: 'לקוח שויך אליך',
@@ -914,7 +968,8 @@ router.patch('/api/leads/:id', async (req, res) => {
 router.post('/api/leads/:id/activities', (req, res) => {
   try {
     const lead = getLeadById(req.params.id);
-    if (!lead) return res.status(404).json({ message: 'ליד לא נמצא' });
+    const access = assertLeadAccess(req, lead);
+    if (!access.ok) return res.status(access.status).json({ message: access.message });
     const message = String(req.body?.message || '').trim();
     if (!message) return res.status(400).json({ message: 'יש להזין תוכן לשרשור' });
     const allowedTypes = ['followup_note', 'call_attempt', 'no_answer', 'vehicle_offer', 'note_added'];
@@ -945,6 +1000,8 @@ router.post('/api/leads/:id/activities', (req, res) => {
 
 router.post('/api/leads/:id/vehicles/:vehicleId', (req, res) => {
   try {
+    const access = assertLeadAccess(req, getLeadById(req.params.id));
+    if (!access.ok) return res.status(access.status).json({ message: access.message });
     const vehicle = getVehicleById(req.params.vehicleId);
     if (!vehicle) {
       return res.status(404).json({ message: 'רכב לא נמצא' });
@@ -961,6 +1018,8 @@ router.post('/api/leads/:id/vehicles/:vehicleId', (req, res) => {
 
 router.delete('/api/leads/:id/vehicles/:vehicleId', (req, res) => {
   try {
+    const access = assertLeadAccess(req, getLeadById(req.params.id));
+    if (!access.ok) return res.status(access.status).json({ message: access.message });
     const lead = unlinkVehicleFromLead(req.params.id, req.params.vehicleId);
     if (!lead) {
       return res.status(404).json({ message: 'ליד לא נמצא' });
@@ -2014,6 +2073,11 @@ router.post('/api/leads/:id/reset', (req, res) => {
 });
 
 router.delete('/api/leads/:id', (req, res) => {
+  const lead = getLeadById(req.params.id);
+  const access = assertLeadAccess(req, lead);
+  if (!access.ok) {
+    return res.status(access.status).json({ message: access.message });
+  }
   const ok = deleteLead(req.params.id);
   if (!ok) {
     return res.status(404).json({ message: 'ליד לא נמצא' });

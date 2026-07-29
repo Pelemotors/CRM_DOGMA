@@ -1,6 +1,7 @@
 import { $, api, debounce, escapeHtml, showToast } from '../api.js';
 import { openLeadDrawer } from './lead-drawer.js';
 import { readCheckedCategories, renderCategoryCheckboxes } from '../ui/vehicle-categories.js';
+import { can } from '../auth.js';
 
 function formatApptWhen(iso) {
   if (!iso) return '—';
@@ -59,6 +60,7 @@ function bindProfile(root, data, agents) {
         `<option value="${o.value}" ${o.value === lead.pipelineStatus ? 'selected' : ''}>${escapeHtml(o.label)}</option>`
     )
     .join('');
+  const canAssign = can('canViewAllCustomers') || can('isManager');
   const agentOpts = agents
     .map(
       (a) =>
@@ -130,13 +132,17 @@ function bindProfile(root, data, agents) {
             <p class="hint" style="margin:0.35rem 0 0">מסנן הצעות מהמלאי — הרכב חייב לכלול את כל הנבחרים</p>
           </div>
           <label class="field-label">נציג משויך
-            <select id="cp-assignee" class="select">
+            ${
+              canAssign
+                ? `<select id="cp-assignee" class="select">
               <option value="">לא משויך</option>
               ${agentOpts}
-            </select>
+            </select>`
+                : `<input class="input" id="cp-assignee-ro" value="${escapeHtml(lead.assignedToName || 'אני / לא משויך')}" disabled>`
+            }
           </label>
         </div>
-        <p class="hint" style="margin:0.5rem 0 0">קטגוריות, תקציב והחזר מעדכנים למטה הצעות רכב מהמלאי (עד 5).</p>
+        <p class="hint" style="margin:0.5rem 0 0">קטגוריות, תקציב והחזר מעדכנים את הצעות הרכב מהמלאי (עד 5).</p>
         <div class="actions-row">
           <button type="button" class="btn btn-primary" id="cp-save">שמור פרטים</button>
           ${debt > 0 ? `<span class="badge badge-red">חוב: ${Number(debt).toLocaleString('he-IL')} ₪</span>` : ''}
@@ -148,6 +154,15 @@ function bindProfile(root, data, agents) {
         <textarea id="cp-notes" class="textarea" rows="6">${escapeHtml(lead.notes || '')}</textarea>
         <div class="actions-row">
           <button type="button" class="btn btn-primary btn-small" id="cp-save-notes">שמור הערות</button>
+        </div>
+      </section>
+
+      <section class="dash-card span-2">
+        <h3>הצעות מהמלאי לפי קטגוריה / תקציב / החזר</h3>
+        <p class="hint">עד 5 רכבים קרובים לפרופיל הלקוח. לחיצה על «קשר ללקוח» מוסיפה לכרטיס.</p>
+        <div id="cp-mismatch-banner" class="match-mismatch-banner hidden" role="status"></div>
+        <div id="cp-budget-matches" class="match-cards">
+          <p class="hint">טוען התאמות...</p>
         </div>
       </section>
 
@@ -230,15 +245,6 @@ function bindProfile(root, data, agents) {
             </tbody></table>`
             : '<p class="empty">אין רכבים מקושרים</p>'
         }
-      </section>
-
-      <section class="dash-card span-2">
-        <h3>הצעות מהמלאי לפי קטגוריה / תקציב / החזר</h3>
-        <p class="hint">עד 5 רכבים קרובים לפרופיל הלקוח. לחיצה על «קשר ללקוח» מוסיפה לכרטיס.</p>
-        <div id="cp-mismatch-banner" class="match-mismatch-banner hidden" role="status"></div>
-        <div id="cp-budget-matches" class="match-cards">
-          <p class="hint">טוען התאמות...</p>
-        </div>
       </section>
 
       <section class="dash-card span-2">
@@ -376,30 +382,31 @@ function bindProfile(root, data, agents) {
   });
 
   $('#cp-save').onclick = async () => {
-    const assigneeSel = $('#cp-assignee');
-    const assignedToUserId = assigneeSel.value;
-    const assignedToName = assignedToUserId
-      ? assigneeSel.options[assigneeSel.selectedIndex]?.text || ''
-      : '';
     const budgetVal = $('#cp-budget').value !== '' ? Number($('#cp-budget').value) : null;
     const monthlyVal = $('#cp-monthly').value !== '' ? Number($('#cp-monthly').value) : null;
     const preferredCategories = readCheckedCategories(root, 'preferredCategories');
+    const body = {
+      name: $('#cp-name').value,
+      email: $('#cp-email').value,
+      city: $('#cp-city').value,
+      address: $('#cp-address').value,
+      source: $('#cp-source').value,
+      pipelineStatus: $('#cp-pipeline').value,
+      budget: budgetVal && budgetVal > 0 ? budgetVal : null,
+      desiredMonthlyPayment: monthlyVal && monthlyVal > 0 ? monthlyVal : null,
+      preferredCategories,
+    };
+    if (canAssign && $('#cp-assignee')) {
+      const assigneeSel = $('#cp-assignee');
+      body.assignedToUserId = assigneeSel.value;
+      body.assignedToName = body.assignedToUserId
+        ? assigneeSel.options[assigneeSel.selectedIndex]?.text || ''
+        : '';
+    }
     try {
       const res = await api(`/api/leads/${lead.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({
-          name: $('#cp-name').value,
-          email: $('#cp-email').value,
-          city: $('#cp-city').value,
-          address: $('#cp-address').value,
-          source: $('#cp-source').value,
-          pipelineStatus: $('#cp-pipeline').value,
-          budget: budgetVal && budgetVal > 0 ? budgetVal : null,
-          desiredMonthlyPayment: monthlyVal && monthlyVal > 0 ? monthlyVal : null,
-          preferredCategories,
-          assignedToUserId,
-          assignedToName,
-        }),
+        body: JSON.stringify(body),
       });
       showToast(res.message || 'נשמר', 'success');
       if (res.noAnswerFlow && res.suggestedWhatsAppMessage) {

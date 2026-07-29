@@ -79,6 +79,7 @@ export function getPermissionsForRole(role) {
     canAccessWhatsAppBulk: isManager,
     canViewUserPasswords: isSystemAdmin,
     canSwitchAgentView: isSystemAdmin,
+    canViewAllCustomers: isManager,
     canCreateVehicle: true,
     canEditVehicle: true,
     canCreateCustomer: true,

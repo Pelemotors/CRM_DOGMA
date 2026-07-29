@@ -143,6 +143,8 @@ export function createLead(payload) {
     carwizSearchText: payload.carwizSearchText || '',
     email: payload.email || '',
     address: payload.address || '',
+    createdByUserId: payload.createdByUserId || '',
+    createdByName: payload.createdByName || '',
     assignedToUserId: payload.assignedToUserId || '',
     assignedToName: payload.assignedToName || '',
     updatedAt: timestamp(),
@@ -264,12 +266,22 @@ function applyLeadFilters(list, filters = {}) {
     vehicleId = '',
     todayOnly = false,
     leadIds = null,
+    assignedToUserId = '',
+    accessibleByUserId = '',
     columnFilters = {},
   } = filters;
 
   if (Array.isArray(leadIds) && leadIds.length) {
     const set = new Set(leadIds);
     result = result.filter((lead) => set.has(lead.id));
+  }
+
+  if (accessibleByUserId) {
+    const uid = String(accessibleByUserId);
+    result = result.filter((lead) => leadAccessibleToUser(lead, uid));
+  } else if (assignedToUserId) {
+    const uid = String(assignedToUserId);
+    result = result.filter((lead) => String(lead.assignedToUserId || '') === uid);
   }
 
   if (status && status !== 'all') {
@@ -323,6 +335,20 @@ function applyLeadFilters(list, filters = {}) {
   }
 
   return result;
+}
+
+/** נציג רואה לקוחות שהוקצו לו או שהוא הקים */
+export function leadAccessibleToUser(lead, userId) {
+  if (!lead || !userId) return false;
+  const uid = String(userId);
+  return (
+    String(lead.assignedToUserId || '') === uid || String(lead.createdByUserId || '') === uid
+  );
+}
+
+export function filterLeadsForViewer(list, { userId, canViewAll } = {}) {
+  if (canViewAll) return list;
+  return list.filter((lead) => leadAccessibleToUser(lead, userId));
 }
 
 export function resolveAudienceLeads({ leadIds = null, filter = {}, limit = null } = {}) {
@@ -569,8 +595,8 @@ export function unlinkVehicleFromLead(leadId, vehicleId) {
   return updateLead(leadId, { interestedVehicleIds: ids });
 }
 
-export function getStats() {
-  const leads = getAllLeads();
+export function getStats(scope = {}) {
+  const leads = applyLeadFilters(getAllLeads(), scope);
   const counts = {
     total: leads.length,
     pending: 0,
@@ -593,10 +619,10 @@ export function getStats() {
   return counts;
 }
 
-export function getTodayQueue() {
+export function getTodayQueue(scope = {}) {
   const today = new Date();
   today.setHours(23, 59, 59, 999);
-  const leads = getAllLeads();
+  const leads = applyLeadFilters(getAllLeads(), scope);
 
   const followUps = leads.filter((lead) => {
     if (!lead.nextFollowUpAt) return false;
