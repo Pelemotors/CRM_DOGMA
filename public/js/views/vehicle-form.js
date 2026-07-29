@@ -1,6 +1,7 @@
 import { $, api, escapeHtml, showToast } from '../api.js';
 import { can } from '../auth.js';
 import { bindPhotoDropZone } from '../ui/photo-dropzone.js';
+import { readCheckedCategories, renderCategoryCheckboxes } from '../ui/vehicle-categories.js';
 
 const TABS = [
   { id: 'details', label: 'פרטי רכב' },
@@ -133,6 +134,13 @@ export async function renderVehicleForm(root, { vehicleId = null } = {}) {
         <div class="field"><label class="field-label">יד</label><input class="input" id="f-hand" value="${escapeHtml(v.hand || '')}"></div>
         <div class="field"><label class="field-label">ק״מ</label><input class="input" id="f-km" type="number" value="${v.km ?? ''}"></div>
         <div class="field"><label class="field-label">סוג מנוע</label><input class="input" id="f-engineType" value="${escapeHtml(v.engineType || '')}"></div>
+        <div class="field span-2">
+          <label class="field-label">קטגוריות</label>
+          <div class="chip-check-row" id="f-categories">
+            ${renderCategoryCheckboxes('categories', v.categories || [])}
+          </div>
+          <p class="hint">אפשר לבחור כמה — למשל הייבריד + 7 מקומות</p>
+        </div>
         <div class="field"><label class="field-label">צבע</label><input class="input" id="f-color" value="${escapeHtml(v.color || '')}"></div>
         <div class="field"><label class="field-label">תאריך טסט אחרון</label><input class="input" id="f-lastTest" value="${escapeHtml(v.lastTestDate || '')}"></div>
         <div class="field"><label class="field-label">מס׳ מערכת</label><input class="input" id="f-systemId" dir="ltr" value="${escapeHtml(v.systemId || '')}" placeholder="אוטומטי אם ריק"></div>
@@ -624,6 +632,7 @@ export async function renderVehicleForm(root, { vehicleId = null } = {}) {
       hand: val($('#f-hand')).trim(),
       km: num($('#f-km')),
       engineType: val($('#f-engineType')).trim(),
+      categories: readCheckedCategories(root, 'categories'),
       color: val($('#f-color')).trim(),
       lastTestDate: val($('#f-lastTest')).trim(),
       systemId: val($('#f-systemId')).trim() || undefined,

@@ -1,6 +1,7 @@
 import { $, api, debounce, escapeHtml, qs, showToast } from '../api.js';
 import { createDataTable } from '../ui/data-table.js';
 import { openLeadDrawer } from './lead-drawer.js';
+import { readCheckedCategories, renderCategoryCheckboxes } from '../ui/vehicle-categories.js';
 
 export async function renderCustomers(root) {
   const selected = new Set();
@@ -326,9 +327,17 @@ export async function renderCustomers(root) {
 }
 
 export async function renderCustomerNew(root) {
+  let selectedVehicleId = '';
+  let selectedVehicleTitle = '';
+
   root.innerHTML = `
-    <div class="page-head"><h1>לקוח חדש</h1></div>
-    <form id="new-customer-form" class="form-grid-4">
+    <div class="page-head">
+      <div>
+        <h1>לקוח חדש</h1>
+        <div class="result-count">תקציב או החזר חודשי + אפשרות לקישור רכב ודיוור ברצף</div>
+      </div>
+    </div>
+    <form id="new-customer-form" class="form-grid-4 panel" style="padding:1rem">
       <div class="field">
         <label class="field-label">סוג לקוח</label>
         <select class="select" name="customerType">
@@ -374,6 +383,48 @@ export async function renderCustomerNew(root) {
           <option>הכל</option>
         </select>
       </div>
+      <div class="field">
+        <label class="field-label">תקציב לרכב (₪)</label>
+        <input class="input" name="budget" id="nc-budget" type="number" min="0" step="1000" dir="ltr" placeholder="100000">
+      </div>
+      <div class="field">
+        <label class="field-label">החזר חודשי רצוי (₪)</label>
+        <input class="input" name="desiredMonthlyPayment" id="nc-monthly" type="number" min="0" step="100" dir="ltr" placeholder="2500">
+      </div>
+      <div class="field span-4">
+        <label class="field-label">קטגוריות רצויות</label>
+        <div class="chip-check-row" id="nc-categories">${renderCategoryCheckboxes('preferredCategories', [])}</div>
+        <p class="hint" style="margin:0.35rem 0 0">אופציונלי — מסנן התאמות מהמלאי (חייב לכלול את כל הנבחרים)</p>
+      </div>
+      <div class="field span-4">
+        <p class="hint" style="margin:0">אופציונלי — תקציב / החזר עוזרים לדרג רכבים מתאימים</p>
+      </div>
+
+      <div class="field span-4">
+        <label class="field-label">רכב מהמלאי (התעניין / הוצע)</label>
+        <div class="actions-row" style="gap:0.5rem;flex-wrap:wrap">
+          <input class="input" id="nc-vehicle-search" placeholder="חיפוש יצרן / דגם / רישוי..." style="flex:1;min-width:200px">
+          <button type="button" class="btn btn-secondary" id="nc-vehicle-search-btn">חפש במלאי</button>
+          <button type="button" class="btn btn-secondary" id="nc-vehicle-clear" hidden>נקה בחירה</button>
+        </div>
+        <input type="hidden" name="interestedVehicleId" id="nc-vehicle-id" value="">
+        <p class="hint" id="nc-vehicle-picked" style="margin-top:0.35rem"></p>
+        <div id="nc-vehicle-results" class="match-cards" style="margin-top:0.5rem"></div>
+      </div>
+
+      <div class="field span-4">
+        <label class="field-label">התאמות לפי קטגוריה / תקציב / החזר (עד 5)</label>
+        <div id="nc-mismatch-banner" class="match-mismatch-banner hidden" role="status"></div>
+        <div id="nc-budget-matches" class="match-cards"><p class="hint">בחר קטגוריות או הזן תקציב / החזר להצגת רכבים מתאימים</p></div>
+      </div>
+
+      <div class="field span-4">
+        <label class="hint" style="display:flex;align-items:center;gap:0.4rem">
+          <input type="checkbox" id="nc-mail-vehicle" disabled>
+          דוור עכשיו את פרטי הרכב ב-WhatsApp (אחרי שמירה)
+        </label>
+      </div>
+
       <div class="field span-4">
         <label class="field-label">הערות</label>
         <textarea class="textarea" name="notes"></textarea>
@@ -385,13 +436,158 @@ export async function renderCustomerNew(root) {
     </form>
   `;
 
+  function setSelectedVehicle(id, title) {
+    selectedVehicleId = id || '';
+    selectedVehicleTitle = title || '';
+    $('#nc-vehicle-id').value = selectedVehicleId;
+    const picked = $('#nc-vehicle-picked');
+    const clearBtn = $('#nc-vehicle-clear');
+    const mailCb = $('#nc-mail-vehicle');
+    if (selectedVehicleId) {
+      picked.innerHTML = `<strong>נבחר:</strong> ${escapeHtml(selectedVehicleTitle)}`;
+      clearBtn.hidden = false;
+      mailCb.disabled = false;
+    } else {
+      picked.textContent = '';
+      clearBtn.hidden = true;
+      mailCb.checked = false;
+      mailCb.disabled = true;
+    }
+  }
+
+  function renderMatchCards(container, matches, emptyText, { mismatchWarning, updateBanner = false } = {}) {
+    const banner = $('#nc-mismatch-banner');
+    if (banner && updateBanner) {
+      if (mismatchWarning) {
+        banner.classList.remove('hidden');
+        banner.textContent = mismatchWarning;
+      } else {
+        banner.classList.add('hidden');
+        banner.textContent = '';
+      }
+    }
+
+    if (!matches?.length) {
+      container.innerHTML = `<p class="hint">${escapeHtml(emptyText || 'אין התאמות')}</p>`;
+      return;
+    }
+    container.innerHTML = matches
+      .map((m) => {
+        const overMonthly = m.fitsMonthly === false;
+        return `<button type="button" class="match-card${overMonthly ? ' match-card-soft-miss' : ''}" data-vehicle-id="${escapeHtml(m.id)}" data-vehicle-title="${escapeHtml(m.title || '')}">
+          <strong>${escapeHtml(m.title || '')}</strong>
+          <span>${escapeHtml(m.priceDisplay || (m.price != null ? `₪${Number(m.price).toLocaleString('he-IL')}` : '—'))}</span>
+          <span class="hint">החזר משוער: ${escapeHtml(m.monthlyPaymentDisplay || '—')}</span>
+          ${overMonthly ? '<span class="match-tag-soft">מעל ההחזר הרצוי</span>' : ''}
+        </button>`;
+      })
+      .join('');
+    container.querySelectorAll('[data-vehicle-id]').forEach((btn) => {
+      btn.onclick = () => setSelectedVehicle(btn.dataset.vehicleId, btn.dataset.vehicleTitle);
+    });
+  }
+
+  async function refreshBudgetMatches() {
+    const budget = Number($('#nc-budget').value) || 0;
+    const monthly = Number($('#nc-monthly').value) || 0;
+    const preferredCategories = readCheckedCategories(root, 'preferredCategories');
+    const box = $('#nc-budget-matches');
+    const banner = $('#nc-mismatch-banner');
+    if (!budget && !monthly && !preferredCategories.length) {
+      if (banner) {
+        banner.classList.add('hidden');
+        banner.textContent = '';
+      }
+      box.innerHTML = '<p class="hint">בחר קטגוריות או הזן תקציב / החזר להצגת רכבים מתאימים</p>';
+      return;
+    }
+    try {
+      const res = await api('/api/vehicles/match-search', {
+        method: 'POST',
+        body: JSON.stringify({
+          budget: budget || undefined,
+          monthlyPayment: monthly || undefined,
+          preferredCategories,
+          limit: 5,
+        }),
+      });
+      renderMatchCards(box, res.matches, 'לא נמצאו רכבים מתאימים', {
+        mismatchWarning: res.mismatchWarning || '',
+        updateBanner: true,
+      });
+    } catch (err) {
+      box.innerHTML = `<p class="hint">${escapeHtml(err.message)}</p>`;
+    }
+  }
+
+  const debouncedMatches = debounce(refreshBudgetMatches, 400);
+  $('#nc-budget').oninput = debouncedMatches;
+  $('#nc-monthly').oninput = debouncedMatches;
+  root.querySelectorAll('input[name="preferredCategories"]').forEach((el) => {
+    el.addEventListener('change', debouncedMatches);
+  });
+
+  async function searchStock() {
+    const q = ($('#nc-vehicle-search').value || '').trim();
+    const box = $('#nc-vehicle-results');
+    try {
+      const data = await api(`/api/vehicles?search=${encodeURIComponent(q)}&pageSize=8`);
+      const items = (data.items || data.vehicles || []).map((v) => ({
+        id: v.id,
+        title: v.title || [v.manufacturer, v.model, v.year].filter(Boolean).join(' '),
+        price: v.price,
+        priceDisplay: v.priceDisplay,
+        monthlyPaymentDisplay: v.monthlyPaymentDisplay,
+      }));
+      renderMatchCards(box, items, 'לא נמצאו רכבים');
+    } catch (err) {
+      box.innerHTML = `<p class="hint">${escapeHtml(err.message)}</p>`;
+    }
+  }
+
+  $('#nc-vehicle-search-btn').onclick = searchStock;
+  $('#nc-vehicle-search').onkeydown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      searchStock();
+    }
+  };
+  $('#nc-vehicle-clear').onclick = () => {
+    setSelectedVehicle('', '');
+    $('#nc-vehicle-results').innerHTML = '';
+  };
+
   $('#new-customer-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
     const body = Object.fromEntries(fd.entries());
+    const budget = Number(body.budget) || 0;
+    const desiredMonthlyPayment = Number(body.desiredMonthlyPayment) || 0;
+    body.budget = budget || null;
+    body.desiredMonthlyPayment = desiredMonthlyPayment || null;
+    body.preferredCategories = readCheckedCategories(root, 'preferredCategories');
+    body.interestedVehicleId = selectedVehicleId || undefined;
+    const mailVehicle = $('#nc-mail-vehicle').checked && selectedVehicleId;
+
     try {
       const res = await api('/api/leads', { method: 'POST', body: JSON.stringify(body) });
-      showToast(res.message, 'success');
+      if (mailVehicle) {
+        try {
+          await api('/api/send/single', {
+            method: 'POST',
+            body: JSON.stringify({
+              phone: res.lead.phone || body.phone,
+              name: res.lead.name || `${body.firstName || ''} ${body.lastName || ''}`.trim(),
+              leadId: res.lead.id,
+            }),
+          });
+          showToast(`${res.message} · הודעת WhatsApp נשלחה`, 'success');
+        } catch (waErr) {
+          showToast(`${res.message} · דיוור נכשל: ${waErr.message}`, 'error');
+        }
+      } else {
+        showToast(res.message, 'success');
+      }
       location.hash = `#/customers/${encodeURIComponent(res.lead.id)}`;
     } catch (err) {
       showToast(err.message, 'error');

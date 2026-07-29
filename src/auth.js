@@ -63,9 +63,11 @@ function sessionCookie(sessionId, maxAgeSec) {
 
 export function getPermissionsForRole(role) {
   const isManager = role === 'system_admin' || role === 'agency_owner';
+  const isSystemAdmin = role === 'system_admin';
   return {
     role,
     isManager,
+    isSystemAdmin,
     canManageUsers: isManager,
     canViewCosts: isManager,
     canViewProfit: isManager,
@@ -75,7 +77,8 @@ export function getPermissionsForRole(role) {
     canAccessUsers: isManager,
     canAccessWhatsApp: true,
     canAccessWhatsAppBulk: isManager,
-    canViewUserPasswords: role === 'system_admin',
+    canViewUserPasswords: isSystemAdmin,
+    canSwitchAgentView: isSystemAdmin,
     canCreateVehicle: true,
     canEditVehicle: true,
     canCreateCustomer: true,

@@ -50,7 +50,7 @@ import {
 import { lookupPlateFull } from '../scrapers/index.js';
 import { lookupPlateFromGov } from '../plate-lookup.js';
 import { getAgency, saveAgency } from '../agency-store.js';
-import { getActivitiesForLead } from '../activity-store.js';
+import { addActivity, getActivitiesForLead } from '../activity-store.js';
 import { CONFIG_DIR, DATA_DIR, ROOT_DIR, formatMessage, normalizePhone, readJson, readText } from '../utils.js';
 import XLSX from 'xlsx';
 import {
@@ -115,6 +115,7 @@ import {
 } from '../new-car-orders-store.js';
 import { buildReportRows, REPORT_TYPES } from '../reports.js';
 import { calculateFinanceQuote, quoteForVehicle } from '../finance.js';
+import { formatCategoriesDisplay } from '../vehicle-categories.js';
 import { matchVehiclesToSearch } from '../match-vehicles.js';
 import {
   backupLocalDb,
@@ -473,7 +474,22 @@ router.post('/api/leads', (req, res) => {
     if (!phone) {
       return res.status(400).json({ message: 'מספר טלפון לא תקין' });
     }
-    const lead = createLead({ ...body, phone });
+    const budget = body.budget != null && body.budget !== '' ? Number(body.budget) : null;
+    const desiredMonthlyPayment =
+      body.desiredMonthlyPayment != null && body.desiredMonthlyPayment !== ''
+        ? Number(body.desiredMonthlyPayment)
+        : null;
+    const interestedVehicleId = body.interestedVehicleId || body.vehicleId || null;
+    if (interestedVehicleId && !getVehicleById(interestedVehicleId)) {
+      return res.status(404).json({ message: 'רכב לא נמצא במלאי' });
+    }
+    const lead = createLead({
+      ...body,
+      phone,
+      budget,
+      desiredMonthlyPayment,
+      interestedVehicleId,
+    });
     res.json({ message: 'הלקוח נוצר בהצלחה', lead: mapLeadForUi(lead) });
   } catch (error) {
     res.status(400).json({ message: translateError(error) });
@@ -705,19 +721,55 @@ router.get('/api/agent-home', (req, res) => {
     const nextWeekEnd = endOfDay(new Date(nextWeekStart.getTime() + 6 * 24 * 60 * 60 * 1000));
 
     const assigneeParam = String(req.query.assignee || 'me').trim();
-    const isManager = Boolean(req.permissions?.isManager);
+    const canSwitchAgentView = Boolean(req.permissions?.canSwitchAgentView);
+    const viewerName = req.user?.name || 'מנהל מערכת';
     let assigneeFilter = null;
+    let viewMode = 'me';
+    let assigneeId = req.user?.id || null;
+    let assigneeName = viewerName;
+
     if (assigneeParam === 'all') {
-      if (!isManager) {
+      if (canSwitchAgentView) {
+        assigneeFilter = null;
+        viewMode = 'all';
+        assigneeId = null;
+        assigneeName = 'כל הנציגים';
+      } else {
         assigneeFilter = req.user?.id || null;
+        viewMode = 'me';
       }
     } else if (assigneeParam === 'me' || !assigneeParam) {
       assigneeFilter = req.user?.id || null;
-    } else if (isManager) {
+      viewMode = 'me';
+      assigneeId = req.user?.id || null;
+      assigneeName = viewerName;
+    } else if (canSwitchAgentView) {
       assigneeFilter = assigneeParam;
+      const target = listUsers().find((u) => u.id === assigneeParam);
+      if (target) {
+        viewMode = 'user';
+        assigneeId = target.id;
+        assigneeName = target.name || target.id;
+      } else {
+        // id לא תקין — נשארים על «שלי»
+        assigneeFilter = req.user?.id || null;
+        viewMode = 'me';
+        assigneeId = req.user?.id || null;
+        assigneeName = viewerName;
+      }
     } else {
       assigneeFilter = req.user?.id || null;
+      viewMode = 'me';
+      assigneeId = req.user?.id || null;
+      assigneeName = viewerName;
     }
+
+    const viewContext = {
+      mode: viewMode,
+      assigneeId,
+      assigneeName,
+      viewerName,
+    };
 
     const apptFilter = (extra) => ({
       status: 'pending',
@@ -775,6 +827,8 @@ router.get('/api/agent-home', (req, res) => {
       interests,
       assignee: assigneeParam,
       assigneeFilter,
+      canSwitchAgentView,
+      viewContext,
       appointmentTypeOptions: APPOINTMENT_TYPES.map((value) => ({
         value,
         label: APPOINTMENT_TYPE_LABELS[value] || value,
@@ -808,7 +862,82 @@ router.patch('/api/leads/:id', async (req, res) => {
         href: `#/customers/${lead.id}`,
       });
     }
-    res.json({ message: 'הליד עודכן', lead: mapLeadForUi(lead) });
+
+    let suggestedWhatsAppMessage = null;
+    let followUpAppointment = null;
+    const becameNoAnswer =
+      req.body?.pipelineStatus === 'no_answer' && before?.pipelineStatus !== 'no_answer';
+
+    if (becameNoAnswer) {
+      addActivity({
+        type: 'no_answer_marked',
+        leadId: lead.id,
+        message: 'סומן אין מענה — הוכנה הודעת חיפוש לקוח',
+      });
+
+      const pendingCallbacks = listAppointmentsRaw({
+        leadId: lead.id,
+        status: 'pending',
+        type: 'callback',
+      });
+      if (!pendingCallbacks.length) {
+        const when = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        followUpAppointment = createAppointment(
+          lead.id,
+          {
+            type: 'callback',
+            scheduledAt: when.toISOString(),
+            notes: 'מעקב אוטומטי אחרי אין מענה',
+          },
+          actor
+        );
+      }
+
+      const tpl = readText(path.join(CONFIG_DIR, 'message-no-answer.txt')) || '';
+      suggestedWhatsAppMessage = formatMessage(tpl, lead, null);
+    }
+
+    res.json({
+      message: 'הליד עודכן',
+      lead: mapLeadForUi(getLeadById(lead.id) || lead),
+      suggestedWhatsAppMessage,
+      followUpAppointment: followUpAppointment
+        ? mapAppointmentForUi(followUpAppointment, lead)
+        : null,
+      noAnswerFlow: becameNoAnswer,
+    });
+  } catch (error) {
+    res.status(400).json({ message: translateError(error) });
+  }
+});
+
+router.post('/api/leads/:id/activities', (req, res) => {
+  try {
+    const lead = getLeadById(req.params.id);
+    if (!lead) return res.status(404).json({ message: 'ליד לא נמצא' });
+    const message = String(req.body?.message || '').trim();
+    if (!message) return res.status(400).json({ message: 'יש להזין תוכן לשרשור' });
+    const allowedTypes = ['followup_note', 'call_attempt', 'no_answer', 'vehicle_offer', 'note_added'];
+    const type = allowedTypes.includes(req.body?.type) ? req.body.type : 'followup_note';
+    const typeLabels = {
+      followup_note: 'הערה',
+      call_attempt: 'ניסיון שיחה',
+      no_answer: 'אין מענה',
+      vehicle_offer: 'הצעת רכב',
+      note_added: 'הערה',
+    };
+    const entry = addActivity({
+      type,
+      leadId: lead.id,
+      message: `${typeLabels[type] || 'מעקב'}: ${message}`,
+      data: { text: message, kind: type },
+    });
+    res.json({
+      message: 'נוסף לשרשור',
+      activity: entry,
+      activities: getActivitiesForLead(lead.id),
+      lead: mapLeadForUi(getLeadById(lead.id)),
+    });
   } catch (error) {
     res.status(400).json({ message: translateError(error) });
   }
@@ -854,6 +983,13 @@ router.get('/api/vehicles', (req, res) => {
       minYear: req.query.minYear || null,
       maxYear: req.query.maxYear || null,
       maxPrice: req.query.maxPrice || null,
+      category: req.query.category || '',
+      categories: req.query.categories
+        ? String(req.query.categories)
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : null,
       page: req.query.page,
       pageSize: req.query.pageSize,
       sort: req.query.sort,
@@ -891,6 +1027,13 @@ router.get('/api/vehicles/export', (req, res) => {
       minYear: req.query.minYear || null,
       maxYear: req.query.maxYear || null,
       maxPrice: req.query.maxPrice || null,
+      category: req.query.category || '',
+      categories: req.query.categories
+        ? String(req.query.categories)
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : null,
       columnFilters: parseColumnFilters(req.query),
     });
 
@@ -905,6 +1048,7 @@ router.get('/api/vehicles/export', (req, res) => {
         'שנת ייצור': v.year,
         'ק"מ': v.km,
         צבע: v.color,
+        קטגוריות: formatCategoriesDisplay(v.categories),
         'מחיר רכב': v.price,
         'החזר חודשי': finance?.monthlyPayment || '',
         'תשלומים (מימון)': finance?.months || '',
@@ -1487,7 +1631,18 @@ router.post('/api/finance/quote', (req, res) => {
 
 router.post('/api/vehicles/match-search', (req, res) => {
   try {
-    const result = matchVehiclesToSearch(req.body?.searchText || '');
+    const body = req.body || {};
+    const result = matchVehiclesToSearch(body.searchText || '', {
+      budget: body.budget != null && body.budget !== '' ? Number(body.budget) : null,
+      monthlyPayment:
+        body.monthlyPayment != null && body.monthlyPayment !== ''
+          ? Number(body.monthlyPayment)
+          : body.desiredMonthlyPayment != null && body.desiredMonthlyPayment !== ''
+            ? Number(body.desiredMonthlyPayment)
+            : null,
+      preferredCategories: body.preferredCategories || body.categories || [],
+      limit: body.limit != null ? Number(body.limit) : 5,
+    });
     res.json(result);
   } catch (error) {
     res.status(400).json({ message: translateError(error) });
@@ -1614,13 +1769,13 @@ router.post('/api/send/single', async (req, res) => {
   }
 
   try {
-    const { phone, name, customMessage, dryRun } = req.body || {};
+    const { phone, name, customMessage, dryRun, leadId } = req.body || {};
     if (!phone?.trim()) {
       return res.status(400).json({ message: 'יש להזין מספר טלפון' });
     }
 
     if (dryRun) {
-      const preview = previewSingleMessage({ phone, name, customMessage });
+      const preview = previewSingleMessage({ phone, name, customMessage, leadId });
       return res.json({
         message: 'תצוגה מקדימה (לא נשלח)',
         phoneDisplay: formatPhoneDisplay(preview.phone),
@@ -1638,6 +1793,7 @@ router.post('/api/send/single', async (req, res) => {
       phone,
       name,
       customMessage,
+      leadId,
       keepClientOpen: true,
     });
     setSendInProgress(userId, false);

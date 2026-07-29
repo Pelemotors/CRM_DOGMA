@@ -2,8 +2,13 @@ import path from 'path';
 import { readJson, timestamp, writeJson } from './utils.js';
 import { LOCAL_DB_FILE, ensureLocalDirs } from './local-db.js';
 import { addActivity } from './activity-store.js';
+import { normalizeCategories } from './vehicle-categories.js';
 
 const LEADS_FILE = LOCAL_DB_FILE;
+
+function normalizePreferredCategories(input) {
+  return normalizeCategories(input);
+}
 
 export const PIPELINE_STATUSES = [
   'new',
@@ -128,6 +133,11 @@ export function createLead(payload) {
     notes: payload.notes || '',
     nextFollowUpAt: payload.nextFollowUpAt || null,
     interestedVehicleIds: [],
+    budget: Number.isFinite(Number(payload.budget)) ? Math.max(0, Number(payload.budget)) : null,
+    desiredMonthlyPayment: Number.isFinite(Number(payload.desiredMonthlyPayment))
+      ? Math.max(0, Number(payload.desiredMonthlyPayment))
+      : null,
+    preferredCategories: normalizePreferredCategories(payload.preferredCategories),
     tags: payload.tags || [],
     carwizId: payload.carwizId || null,
     carwizSearchText: payload.carwizSearchText || '',
@@ -138,6 +148,11 @@ export function createLead(payload) {
     updatedAt: timestamp(),
   };
 
+  const vehicleId = payload.interestedVehicleId || payload.vehicleId || null;
+  if (vehicleId) {
+    lead.interestedVehicleIds = [String(vehicleId)];
+  }
+
   db.leads.unshift(lead);
   saveDb(db);
   addActivity({
@@ -145,6 +160,15 @@ export function createLead(payload) {
     leadId: lead.id,
     message: `נוצר לקוח ידני: ${name || phone}`,
   });
+  if (vehicleId) {
+    addActivity({
+      type: 'vehicle_linked',
+      leadId: lead.id,
+      vehicleId: String(vehicleId),
+      message: 'רכב קושר בעת הקמת הלקוח',
+      data: { vehicleId: String(vehicleId) },
+    });
+  }
   return lead;
 }
 
@@ -442,13 +466,23 @@ export function updateLead(leadId, patch) {
     'address',
     'assignedToUserId',
     'assignedToName',
+    'budget',
+    'desiredMonthlyPayment',
+    'preferredCategories',
   ];
 
   const before = { ...lead };
 
   for (const key of allowed) {
     if (patch[key] !== undefined) {
-      lead[key] = patch[key];
+      if (key === 'budget' || key === 'desiredMonthlyPayment') {
+        const n = Number(patch[key]);
+        lead[key] = Number.isFinite(n) && n >= 0 ? n : null;
+      } else if (key === 'preferredCategories') {
+        lead[key] = normalizePreferredCategories(patch[key]);
+      } else {
+        lead[key] = patch[key];
+      }
     }
   }
 

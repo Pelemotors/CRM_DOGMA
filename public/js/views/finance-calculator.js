@@ -127,9 +127,10 @@ export async function renderFinanceCalculator(root) {
           <label class="field-label">סה״כ לתשלום</label>
           <div>₪${escapeHtml(q.totalPaidDisplay || money(q.totalPaid))}</div>
         </div>
-        <div class="field">
-          <label class="field-label">ריבית כוללת (משוער)</label>
-          <div>₪${escapeHtml(money(q.totalInterest))}</div>
+        <div class="field" style="grid-column:1/-1">
+          <label class="field-label">סך הריבית בכל תקופת המימון</label>
+          <div><strong style="font-size:1.25rem">₪${escapeHtml(money(q.totalInterest))}</strong></div>
+          <p class="hint" style="margin:0.25rem 0 0">סכום הריבית המצטברת על פני כל התשלומים (לא כולל בלון אם קיים כקרן).</p>
         </div>
       </div>
     `;

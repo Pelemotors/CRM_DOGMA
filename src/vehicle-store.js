@@ -4,6 +4,8 @@ import { DATA_DIR } from './utils.js';
 import { ensureLocalDirs, VEHICLE_MEDIA_DIR } from './local-db.js';
 import { readJson, timestamp, writeJson } from './utils.js';
 import { quoteForVehicle } from './finance.js';
+import { formatCategoriesDisplay, normalizeCategories } from './vehicle-categories.js';
+import { VEHICLE_CATEGORIES } from './vehicle-categories.js';
 
 export const VEHICLES_FILE = path.join(DATA_DIR, 'vehicles.json');
 export const VEHICLE_DOCS_DIR = path.join(DATA_DIR, 'vehicle-docs');
@@ -70,6 +72,7 @@ const VEHICLE_EDITABLE_FIELDS = [
   'expenses',
   'docs',
   'govCodes',
+  'categories',
 ];
 
 function toNumber(value, fallback = null) {
@@ -109,6 +112,12 @@ function normalizeVehicleInput(input = {}, { existing = null } = {}) {
   if (patch.hand !== undefined) base.hand = patch.hand == null || patch.hand === '' ? '' : String(patch.hand);
   if (patch.keyCount !== undefined) base.keyCount = toNumber(patch.keyCount, null);
   if (patch.doors !== undefined) base.doors = toNumber(patch.doors, null);
+
+  if (patch.categories !== undefined) {
+    base.categories = normalizeCategories(patch.categories);
+  } else if (!Array.isArray(base.categories)) {
+    base.categories = normalizeCategories(existing?.categories);
+  }
 
   if (Array.isArray(patch.expenses)) {
     base.expenses = patch.expenses.map((e) => ({
@@ -391,6 +400,7 @@ export function getVehicleFacets() {
     locations: uniq('location'),
     years: uniq('year'),
     colors: uniq('color'),
+    categories: VEHICLE_CATEGORIES,
   };
 }
 
@@ -406,8 +416,26 @@ function applyVehicleFilters(list, filters = {}) {
     minYear = null,
     maxYear = null,
     maxPrice = null,
+    categories = null,
+    category = '',
     columnFilters = {},
   } = filters;
+
+  const requiredCats = normalizeCategories(
+    Array.isArray(categories)
+      ? categories
+      : category
+        ? String(category)
+            .split(',')
+            .map((s) => s.trim())
+        : []
+  );
+  if (requiredCats.length) {
+    result = result.filter((v) => {
+      const have = new Set(normalizeCategories(v.categories));
+      return requiredCats.every((id) => have.has(id));
+    });
+  }
 
   if (manufacturer) {
     const term = manufacturer.toLowerCase();
@@ -443,7 +471,17 @@ function applyVehicleFilters(list, filters = {}) {
   if (search) {
     const term = String(search).toLowerCase();
     result = result.filter((v) => {
-      const hay = [v.manufacturer, v.model, v.trim, v.plate, v.systemId, v.color, v.year, v.location]
+      const hay = [
+        v.manufacturer,
+        v.model,
+        v.trim,
+        v.plate,
+        v.systemId,
+        v.color,
+        v.year,
+        v.location,
+        formatCategoriesDisplay(v.categories),
+      ]
         .filter(Boolean)
         .join(' ')
         .toLowerCase();

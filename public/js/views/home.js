@@ -93,27 +93,63 @@ async function loadHome(root, weekStart) {
   const weekStartStr = localDateKey(currentWeekStart);
 
   try {
+    // קודם מבקשים agent-home — canSwitch מהשרת קובע אם מותר להמשיך עם assignee נוכחי
     const qs = `weekStart=${encodeURIComponent(weekStartStr)}&assignee=${encodeURIComponent(currentAssignee)}`;
-    const [data, summary, agentsRes] = await Promise.all([
+    const [data, summary] = await Promise.all([
       api(`/api/agent-home?${qs}`),
       api('/api/summary'),
-      can('isManager') ? api('/api/users/agents').catch(() => ({ agents: [] })) : Promise.resolve({ agents: [] }),
     ]);
-    const agents = agentsRes.agents || [];
-    const assigneeSelect = can('isManager')
-      ? `<label class="field-label" style="margin:0">תצוגה
-          <select id="assignee-filter" class="select" style="min-width:140px">
-            <option value="me" ${currentAssignee === 'me' ? 'selected' : ''}>שלי</option>
-            <option value="all" ${currentAssignee === 'all' ? 'selected' : ''}>הכל</option>
-            ${agents
-              .map(
-                (a) =>
-                  `<option value="${escapeHtml(a.id)}" ${currentAssignee === a.id ? 'selected' : ''}>${escapeHtml(a.name)}</option>`
-              )
-              .join('')}
-          </select>
-        </label>`
+
+    const canSwitch = Boolean(can('canSwitchAgentView') || data.canSwitchAgentView);
+    if (!canSwitch) {
+      currentAssignee = 'me';
+    }
+
+    let agents = [];
+    if (canSwitch) {
+      const agentsRes = await api('/api/users/agents').catch(() => ({ agents: [] }));
+      agents = agentsRes.agents || [];
+    }
+
+    const viewCtx = data.viewContext || { mode: 'me', assigneeName: '', viewerName: '' };
+    const selectValue =
+      viewCtx.mode === 'all' ? 'all' : viewCtx.mode === 'user' ? viewCtx.assigneeId || currentAssignee : 'me';
+    if (canSwitch) {
+      currentAssignee = selectValue;
+    }
+
+    const viewBar = canSwitch
+      ? `<div class="agent-view-bar">
+          <div class="agent-view-bar-main">
+            <label class="field-label" style="margin:0">תצוגת מסך סוכן
+              <select id="assignee-filter" class="select" style="min-width:180px">
+                <option value="me" ${selectValue === 'me' ? 'selected' : ''}>שלי</option>
+                <option value="all" ${selectValue === 'all' ? 'selected' : ''}>הכל</option>
+                ${agents
+                  .map(
+                    (a) =>
+                      `<option value="${escapeHtml(a.id)}" ${selectValue === a.id ? 'selected' : ''}>${escapeHtml(a.name)}</option>`
+                  )
+                  .join('')}
+              </select>
+            </label>
+            <p class="hint" style="margin:0">פעולות (סימון בוצע וכו׳) נשארות בשם המנהל המחובר — רק התצוגה משתנה</p>
+          </div>
+        </div>`
       : '';
+
+    let viewBanner = '';
+    if (canSwitch && viewCtx.mode === 'all') {
+      viewBanner = `<div class="agent-view-banner" role="status">
+        <span><strong>מנהל מערכת</strong> · צופה בכל הנציגים</span>
+        <button type="button" class="btn btn-small btn-secondary" id="btn-view-me">חזרה לשלי</button>
+      </div>`;
+    } else if (canSwitch && viewCtx.mode === 'user') {
+      viewBanner = `<div class="agent-view-banner" role="status">
+        <span><strong>מנהל מערכת</strong> · צופה כ־${escapeHtml(viewCtx.assigneeName || 'נציג')}</span>
+        <button type="button" class="btn btn-small btn-secondary" id="btn-view-me">חזרה לשלי</button>
+      </div>`;
+    }
 
     const days = Array.from({ length: 7 }, (_, i) => {
       const day = addDays(currentWeekStart, i);
@@ -131,12 +167,13 @@ async function loadHome(root, weekStart) {
       <div class="page-head">
         <h1>מסך סוכן</h1>
         <div class="actions-row" style="margin:0">
-          ${assigneeSelect}
           <a class="btn btn-primary btn-small" href="#/customers/new">לקוח חדש</a>
           <a class="btn btn-secondary btn-small" href="#/stock/new">הוסף רכב</a>
           <a class="card-link" href="#/today">פניות ומעקב ←</a>
         </div>
       </div>
+      ${viewBar}
+      ${viewBanner}
       ${renderAlerts(data.alerts)}
 
       <div class="agent-layout">
@@ -267,6 +304,10 @@ function bindHomeEvents(root) {
   $('#cal-today')?.addEventListener('click', () => loadHome(root, new Date()));
   $('#assignee-filter')?.addEventListener('change', (e) => {
     currentAssignee = e.target.value || 'me';
+    loadHome(root, currentWeekStart);
+  });
+  $('#btn-view-me')?.addEventListener('click', () => {
+    currentAssignee = 'me';
     loadHome(root, currentWeekStart);
   });
 

@@ -325,7 +325,14 @@ export function previewSingleMessage({ phone, name = '', customMessage = null, l
   }
 
   const lead = leadId ? getLeadById(leadId) : { name: name || '', phone: normalized };
-  const message = buildMessage(loadMessageTemplate(), { ...lead, name: name || lead?.name || '' }, customMessage);
+  if (!lead) {
+    throw new Error('ליד לא נמצא');
+  }
+  const message = buildMessage(
+    loadMessageTemplate(),
+    { ...lead, name: name || lead?.name || '', phone: normalized },
+    customMessage
+  );
 
   return {
     phone: normalized,
@@ -340,10 +347,11 @@ export async function sendToSingleNumber({
   phone,
   name = '',
   customMessage = null,
+  leadId = null,
   dryRun = false,
   keepClientOpen = true,
 }) {
-  const preview = previewSingleMessage({ phone, name, customMessage });
+  const preview = previewSingleMessage({ phone, name, customMessage, leadId });
 
   if (dryRun) {
     return {

@@ -1,5 +1,10 @@
 import { getAllVehicles } from './vehicle-store.js';
-import { loadFinanceConfig } from './finance.js';
+import { calculateFinanceQuote, loadFinanceConfig, quoteForVehicle } from './finance.js';
+import {
+  formatCategoriesDisplay,
+  normalizeCategories,
+  vehicleMatchesCategories,
+} from './vehicle-categories.js';
 
 /** מילים מ־UI של Carwiz / סוכנות — לא לשימוש בהצלבה */
 const STOP_WORDS = new Set([
@@ -215,6 +220,23 @@ function scoreVehicle(vehicle, intent, tolerancePercent) {
     else if (vehicle.price > high * 1.1 || vehicle.price < low * 0.8) score -= 8;
   }
 
+  if (intent.monthlyPayment != null) {
+    const monthly =
+      vehicle._monthlyPayment != null
+        ? Number(vehicle._monthlyPayment)
+        : vehicle.price != null
+          ? Number(vehicle.price) / 60
+          : null;
+    if (monthly != null) {
+      const tol = (Number(tolerancePercent) || 20) / 100;
+      const target = Number(intent.monthlyPayment);
+      const low = target * (1 - tol);
+      const high = target * (1 + tol);
+      if (monthly >= low && monthly <= high) score += 12;
+      else if (monthly > high * 1.2 || monthly < low * 0.8) score -= 6;
+    }
+  }
+
   // בלי התאמת יצרן/דגם אמיתית — לא מחשיבים התאמה
   if (!strongBrandOrModel) return 0;
   if (score < MIN_MATCH_SCORE) return 0;
@@ -226,32 +248,140 @@ function scoreVehicle(vehicle, intent, tolerancePercent) {
  */
 export function matchVehiclesToSearch(searchText, options = {}) {
   const intent = parseSearchIntent(searchText);
+  if (options.budget != null && Number(options.budget) > 0) {
+    intent.budget = Number(options.budget);
+  }
+  if (options.monthlyPayment != null && Number(options.monthlyPayment) > 0) {
+    intent.monthlyPayment = Number(options.monthlyPayment);
+  }
+
+  const preferredCategories = normalizeCategories(
+    options.preferredCategories ?? options.categories ?? []
+  );
+  intent.preferredCategories = preferredCategories;
+
   const config = loadFinanceConfig();
   const tolerance = options.budgetTolerancePercent ?? config.budgetTolerancePercent ?? 20;
   const limit = options.limit || 3;
-  const vehicles = options.vehicles || getAllVehicles();
+  let vehicles = options.vehicles || getAllVehicles();
+  if (preferredCategories.length) {
+    vehicles = vehicles.filter((v) => vehicleMatchesCategories(v, preferredCategories));
+  }
 
-  const ranked = vehicles
-    .map((v) => ({
-      vehicle: v,
-      score: scoreVehicle(v, intent, tolerance),
-    }))
-    .filter((r) => r.score > 0)
-    .sort((a, b) => b.score - a.score || (a.vehicle.price || 0) - (b.vehicle.price || 0))
-    .slice(0, limit);
+  const hasTextIntent = Boolean((intent.tokens || []).length || intent.year);
+  const hasMoneyIntent = intent.budget != null || intent.monthlyPayment != null;
+  const hasCategoryIntent = preferredCategories.length > 0;
+
+  let ranked;
+  const withMonthly = vehicles.map((v) => {
+    const finance = quoteForVehicle(v);
+    return {
+      ...v,
+      _monthlyPayment: finance?.monthlyPayment ?? null,
+    };
+  });
+
+  if (hasTextIntent) {
+    ranked = withMonthly
+      .map((v) => ({
+        vehicle: v,
+        score: scoreVehicle(v, intent, tolerance),
+        monthlyPayment: v._monthlyPayment,
+      }))
+      .filter((r) => r.score > 0)
+      .sort((a, b) => b.score - a.score || (a.vehicle.price || 0) - (b.vehicle.price || 0))
+      .slice(0, limit);
+  } else if (hasMoneyIntent) {
+    ranked = withMonthly
+      .map((v) => ({
+        vehicle: v,
+        score: scoreVehicleByBudget(v, intent, tolerance),
+        monthlyPayment: v._monthlyPayment,
+      }))
+      .filter((r) => r.score > 0)
+      .sort((a, b) => b.score - a.score || (a.vehicle.price || 0) - (b.vehicle.price || 0))
+      .slice(0, limit);
+  } else if (hasCategoryIntent) {
+    ranked = withMonthly
+      .map((v) => ({
+        vehicle: v,
+        score: 10,
+        monthlyPayment: v._monthlyPayment,
+      }))
+      .sort((a, b) => (a.vehicle.price || 0) - (b.vehicle.price || 0))
+      .slice(0, limit);
+  } else {
+    ranked = [];
+  }
+
+  const monthlyTol = Math.max(tolerance, 25) / 100;
+  const desiredMonthly = intent.monthlyPayment != null ? Number(intent.monthlyPayment) : null;
+
+  let typicalMonthly = null;
+  let mismatchWarning = null;
+  if (intent.budget != null && desiredMonthly != null && intent.budget > 0 && desiredMonthly > 0) {
+    const quote = calculateFinanceQuote({
+      price: intent.budget,
+      hasComprehensive: true,
+      isNew: false,
+    });
+    typicalMonthly = quote?.monthlyPayment != null ? Number(quote.monthlyPayment) : null;
+    if (typicalMonthly != null && typicalMonthly > 0) {
+      const low = typicalMonthly * (1 - monthlyTol);
+      const high = typicalMonthly * (1 + monthlyTol);
+      if (desiredMonthly < low || desiredMonthly > high) {
+        const typicalDisplay = Math.round(typicalMonthly).toLocaleString('he-IL');
+        mismatchWarning = `התקציב וההחזר שציינת לא הולכים יחד — ההחזר המשוער לתקציב כזה הוא כ־₪${typicalDisplay} לחודש. מציגים בכל זאת רכבים קרובים למחיר.`;
+      }
+    }
+  }
+
+  // אם יש אי-התאמה: לדרג בעיקר לפי מחיר/תקציב (לא לתת להחזר «להעלים» רכבים טובים במחיר)
+  if (mismatchWarning && intent.budget != null) {
+    ranked = withMonthly
+      .map((v) => ({
+        vehicle: v,
+        score: scoreVehicleByBudget(v, { budget: intent.budget }, tolerance),
+        monthlyPayment: v._monthlyPayment,
+      }))
+      .filter((r) => r.score > 0)
+      .sort((a, b) => b.score - a.score || (a.vehicle.price || 0) - (b.vehicle.price || 0))
+      .slice(0, limit);
+  }
+
+  function fitsMonthly(monthly) {
+    if (desiredMonthly == null || desiredMonthly <= 0 || monthly == null) return null;
+    const high = desiredMonthly * (1 + monthlyTol);
+    return Number(monthly) <= high;
+  }
 
   return {
     intent,
-    matches: ranked.map((r) => ({
-      id: r.vehicle.id,
-      score: r.score,
-      title: [r.vehicle.manufacturer, r.vehicle.model, r.vehicle.year].filter(Boolean).join(' '),
-      manufacturer: r.vehicle.manufacturer,
-      model: r.vehicle.model,
-      year: r.vehicle.year,
-      price: r.vehicle.price,
-      plate: r.vehicle.plate,
-    })),
+    typicalMonthly,
+    mismatchWarning,
+    matches: ranked.map((r) => {
+      const fit = fitsMonthly(r.monthlyPayment);
+      return {
+        id: r.vehicle.id,
+        score: Math.round(r.score * 10) / 10,
+        title: [r.vehicle.manufacturer, r.vehicle.model, r.vehicle.year].filter(Boolean).join(' '),
+        manufacturer: r.vehicle.manufacturer,
+        model: r.vehicle.model,
+        year: r.vehicle.year,
+        price: r.vehicle.price,
+        plate: r.vehicle.plate,
+        categories: normalizeCategories(r.vehicle.categories),
+        categoriesDisplay: formatCategoriesDisplay(r.vehicle.categories),
+        monthlyPayment: r.monthlyPayment,
+        monthlyPaymentDisplay:
+          r.monthlyPayment != null
+            ? `₪${Number(r.monthlyPayment).toLocaleString('he-IL')}`
+            : null,
+        priceDisplay:
+          r.vehicle.price != null ? `₪${Number(r.vehicle.price).toLocaleString('he-IL')}` : null,
+        fitsMonthly: fit,
+      };
+    }),
     bestMatch: ranked[0]
       ? {
           id: ranked[0].vehicle.id,
@@ -263,4 +393,47 @@ export function matchVehiclesToSearch(searchText, options = {}) {
         }
       : null,
   };
+}
+
+/** דירוג לפי תקציב / החזר חודשי בלבד (בלי חובת יצרן/דגם) */
+function scoreVehicleByBudget(vehicle, intent, tolerancePercent) {
+  const tol = (Number(tolerancePercent) || 20) / 100;
+  let score = 0;
+
+  if (intent.budget != null && vehicle.price != null) {
+    const low = intent.budget * (1 - tol);
+    const high = intent.budget * (1 + tol);
+    const price = Number(vehicle.price);
+    if (price >= low && price <= high) {
+      const mid = intent.budget;
+      const dist = Math.abs(price - mid) / Math.max(mid, 1);
+      score += Math.max(5, 40 - dist * 80);
+    } else if (price <= high * 1.25 && price >= low * 0.75) {
+      score += 8;
+    }
+  }
+
+  if (intent.monthlyPayment != null) {
+    // lazy import avoided — monthly computed by caller via finance in routes when enriching
+    // Here approximate: price / 60 as crude monthly if no quote attached
+    const approxMonthly =
+      vehicle._monthlyPayment != null
+        ? Number(vehicle._monthlyPayment)
+        : vehicle.price != null
+          ? Number(vehicle.price) / 60
+          : null;
+    if (approxMonthly != null) {
+      const target = Number(intent.monthlyPayment);
+      const low = target * (1 - tol);
+      const high = target * (1 + tol);
+      if (approxMonthly >= low && approxMonthly <= high) {
+        const dist = Math.abs(approxMonthly - target) / Math.max(target, 1);
+        score += Math.max(5, 40 - dist * 80);
+      } else if (approxMonthly <= high * 1.3 && approxMonthly >= low * 0.7) {
+        score += 6;
+      }
+    }
+  }
+
+  return score;
 }

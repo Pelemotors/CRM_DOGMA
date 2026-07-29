@@ -2,6 +2,7 @@ import { $, api, debounce, escapeHtml, qs, showToast } from '../api.js';
 import { createDataTable } from '../ui/data-table.js';
 import { openVehicleDrawer } from './vehicle-drawer.js';
 import { can } from '../auth.js';
+import { readCheckedCategories, renderCategoryCheckboxes } from '../ui/vehicle-categories.js';
 
 function licenseClass(value) {
   if (!value) return '';
@@ -48,6 +49,10 @@ export async function renderStock(root) {
       <label>מצב<select class="select" id="f-condition"><option value="">הכל</option></select></label>
       <label>מיקום<select class="select" id="f-location"><option value="">הכל</option></select></label>
     </div>
+    <div class="filters-bar filters-bar-cats">
+      <span class="field-label" style="margin:0">קטגוריות (כולן חייבות להתאים)</span>
+      <div class="chip-check-row" id="f-categories">${renderCategoryCheckboxes('stockCategories', [])}</div>
+    </div>
     <div id="stock-table"></div>
   `;
 
@@ -90,6 +95,16 @@ export async function renderStock(root) {
         render: (r) => escapeHtml(r.kmDisplay || r.km || '—'),
       },
       { key: 'year', label: 'שנת ייצור', sortable: true, filterable: true },
+      {
+        key: 'categoriesDisplay',
+        label: 'קטגוריות',
+        sortable: false,
+        filterable: false,
+        render: (r) =>
+          r.categoriesDisplay
+            ? `<span class="cat-tags">${escapeHtml(r.categoriesDisplay)}</span>`
+            : '—',
+      },
       { key: 'hand', label: 'יד', sortable: true, filterable: true },
       { key: 'color', label: 'צבע', sortable: true, filterable: true },
       { key: 'engineVolume', label: 'נפח', sortable: true, filterable: true },
@@ -143,6 +158,7 @@ export async function renderStock(root) {
   table.setState({ sort: 'manufacturer', dir: 'asc' });
 
   function filters() {
+    const cats = readCheckedCategories(root, 'stockCategories');
     return {
       search: $('#f-search').value.trim(),
       manufacturer: $('#f-manufacturer').value,
@@ -152,6 +168,7 @@ export async function renderStock(root) {
       maxYear: $('#f-maxYear').value,
       condition: $('#f-condition').value,
       location: $('#f-location').value,
+      categories: cats.length ? cats.join(',') : '',
       page: table.state.page,
       pageSize: table.state.pageSize,
       sort: table.state.sort,
@@ -187,6 +204,9 @@ export async function renderStock(root) {
       $(`#${id}`)?.addEventListener('change', reload);
     }
   );
+  root.querySelectorAll('input[name="stockCategories"]').forEach((el) => {
+    el.addEventListener('change', reload);
+  });
 
   $('#stock-file')?.addEventListener('change', async () => {
     const file = $('#stock-file').files?.[0];

@@ -1,5 +1,6 @@
 import { cleanCarwizSearchText } from '../match-vehicles.js';
 import { quoteForVehicle } from '../finance.js';
+import { formatCategoriesDisplay, normalizeCategories } from '../vehicle-categories.js';
 
 export const STATUS_LABELS = {
   pending: 'ממתין',
@@ -194,8 +195,11 @@ export function mapVehicleForUi(vehicle) {
   }));
   const finance = quoteForVehicle(vehicle);
   const monthlyPayment = finance?.monthlyPayment || null;
+  const categories = normalizeCategories(vehicle.categories);
   return {
     ...vehicle,
+    categories,
+    categoriesDisplay: formatCategoriesDisplay(categories),
     photos,
     thumbUrl: photos[0]?.url || null,
     title: title || `רכב ${vehicle.systemId}`,
