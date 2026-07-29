@@ -1,5 +1,5 @@
 @echo off
-title Olam HaRechev - Server RUNNING
+title Yossi Car - Server RUNNING
 cd /d "%~dp0"
 
 where node >nul 2>&1
@@ -33,7 +33,7 @@ if not errorlevel 1 (
 
 echo.
 echo ========================================
-echo   Olam HaRechev - Management System
+echo   Yossi Car - Management System
 echo ========================================
 echo.
 echo   Keep this window OPEN while working.

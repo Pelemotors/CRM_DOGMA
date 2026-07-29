@@ -1,8 +1,10 @@
 אהלן{{name}} 👋
-אני יוצר איתך קשר מסוכנות עולם הרכב
+אני יוצר איתך קשר מסוכנות יוסי קאר בעפולה
 {{sourceLine}}
 
 לפי החיפוש שלך{{searchLine}}, מצאתי רכב שעשוי להתאים:
 {{manufacturer}} {{model}} {{year}}
 מחיר: {{price}} ₪
 {{financeLine}}
+
+https://www.yossicar.co.il/

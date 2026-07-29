@@ -1,5 +1,6 @@
 import { $, api, escapeHtml, showToast } from '../api.js';
 import { can } from '../auth.js';
+import { bindPhotoDropZone } from '../ui/photo-dropzone.js';
 
 const TABS = [
   { id: 'details', label: 'פרטי רכב' },
@@ -78,6 +79,13 @@ export async function renderVehicleForm(root, { vehicleId = null } = {}) {
 
   const v = vehicle || {};
   const pm = v.purchaseMeta || {};
+  let currentVehicleId = vehicleId;
+  /** @type {File[]} */
+  let pendingPhotos = [];
+  /** @type {string[]} */
+  let pendingObjectUrls = [];
+  /** @type {string[]} */
+  let pendingPhotoUrls = [];
 
   root.innerHTML = `
     <div class="page-head">
@@ -137,6 +145,20 @@ export async function renderVehicleForm(root, { vehicleId = null } = {}) {
             : `<span style="color:#b45309">קטלוג היצרנים ריק — מנהל צריך לסנכרן ב«ממשק ניהול» ← סנכרון קטלוג GOV.</span>`
         }
       </p>
+
+      <div class="media-block" style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--border, #d7e0e5)">
+        <h3 class="section-title" style="margin:0 0 0.35rem">תמונות / מדיה לדיוור</h3>
+        <p class="hint">התמונות נשמרות על כרטיס הרכב ויצורפו אוטומטית בדיוור WhatsApp.</p>
+        <div id="form-photo-gallery" class="photo-gallery" style="margin-top:0.75rem"></div>
+        <div id="form-photo-dropzone" class="photo-dropzone" tabindex="0" role="button" aria-label="העלאת תמונות">
+          <strong>גרור לכאן תמונות מהמחשב או מאתר אחר</strong>
+          <p class="hint">או לחץ לבחירת קבצים מהמחשב</p>
+        </div>
+        <label class="btn btn-secondary file-label" style="margin-top:0.75rem">העלה תמונות מהמחשב
+          <input id="form-photo-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden>
+        </label>
+        <p class="hint" id="form-photo-hint" style="margin-top:0.5rem"></p>
+      </div>
     </section>
 
     ${
@@ -360,6 +382,185 @@ export async function renderVehicleForm(root, { vehicleId = null } = {}) {
   }
   renderDocs();
 
+  function clearPendingObjectUrls() {
+    for (const u of pendingObjectUrls) {
+      try {
+        URL.revokeObjectURL(u);
+      } catch {
+        // ignore
+      }
+    }
+    pendingObjectUrls = [];
+  }
+
+  function renderMediaGallery() {
+    const gallery = $('#form-photo-gallery');
+    const hint = $('#form-photo-hint');
+    if (!gallery) return;
+
+    const saved = Array.isArray(v.photos) ? v.photos : [];
+    const parts = [];
+
+    for (const p of saved) {
+      const url = p.url || (currentVehicleId ? `/api/vehicles/${currentVehicleId}/photos/${p.id}` : '');
+      parts.push(`
+        <div class="photo-card">
+          <img src="${escapeHtml(url)}" alt="">
+          ${
+            currentVehicleId
+              ? `<button type="button" class="btn btn-small btn-danger photo-del" data-del-photo="${escapeHtml(p.id)}">מחק</button>`
+              : ''
+          }
+        </div>`);
+    }
+
+    clearPendingObjectUrls();
+    pendingPhotos.forEach((file, idx) => {
+      const objUrl = URL.createObjectURL(file);
+      pendingObjectUrls.push(objUrl);
+      parts.push(`
+        <div class="photo-card">
+          <img src="${objUrl}" alt="">
+          <button type="button" class="btn btn-small btn-danger photo-del" data-del-pending="${idx}">הסר</button>
+          <span class="hint" style="display:block;font-size:11px;padding:2px 4px">ממתין לשמירה</span>
+        </div>`);
+    });
+
+    pendingPhotoUrls.forEach((url, idx) => {
+      parts.push(`
+        <div class="photo-card">
+          <img src="${escapeHtml(url)}" alt="" referrerpolicy="no-referrer">
+          <button type="button" class="btn btn-small btn-danger photo-del" data-del-pending-url="${idx}">הסר</button>
+          <span class="hint" style="display:block;font-size:11px;padding:2px 4px">מאתר · ממתין</span>
+        </div>`);
+    });
+
+    if (!parts.length) {
+      gallery.innerHTML =
+        '<p class="empty">אין תמונות עדיין — גרור לכאן או העלה. הן יישמרו על כרטיס הרכב.</p>';
+    } else {
+      gallery.innerHTML = parts.join('');
+    }
+
+    if (hint) {
+      const pendingCount = pendingPhotos.length + pendingPhotoUrls.length;
+      hint.textContent = currentVehicleId
+        ? 'העלאה / ייבוא מאתר נשמרים מיד על כרטיס הרכב.'
+        : pendingCount
+          ? `${pendingCount} תמונות יצורפו אוטומטית אחרי «שמור רכב».`
+          : 'ברכב חדש: גרור או בחר תמונות — יישמרו עם השמירה.';
+    }
+
+    gallery.querySelectorAll('[data-del-photo]').forEach((btn) => {
+      btn.onclick = async (e) => {
+        e.preventDefault();
+        if (!currentVehicleId) return;
+        if (!confirm('למחוק תמונה מהרכב?')) return;
+        try {
+          const data = await api(`/api/vehicles/${currentVehicleId}/photos/${btn.dataset.delPhoto}`, {
+            method: 'DELETE',
+          });
+          if (data.vehicle) Object.assign(v, data.vehicle);
+          else v.photos = (v.photos || []).filter((p) => p.id !== btn.dataset.delPhoto);
+          showToast(data.message || 'התמונה נמחקה', 'success');
+          renderMediaGallery();
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      };
+    });
+
+    gallery.querySelectorAll('[data-del-pending]').forEach((btn) => {
+      btn.onclick = () => {
+        const i = Number(btn.dataset.delPending);
+        pendingPhotos.splice(i, 1);
+        renderMediaGallery();
+      };
+    });
+
+    gallery.querySelectorAll('[data-del-pending-url]').forEach((btn) => {
+      btn.onclick = () => {
+        const i = Number(btn.dataset.delPendingUrl);
+        pendingPhotoUrls.splice(i, 1);
+        renderMediaGallery();
+      };
+    });
+  }
+
+  async function uploadPhotosToVehicle(id, files) {
+    if (!id || !files?.length) return null;
+    const fd = new FormData();
+    files.forEach((f) => fd.append('photos', f));
+    const res = await fetch(`/api/vehicles/${id}/photos`, {
+      method: 'POST',
+      credentials: 'include',
+      body: fd,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'שגיאה בהעלאת תמונות');
+    return data;
+  }
+
+  async function importPhotoUrlsToVehicle(id, urls) {
+    if (!id || !urls?.length) return null;
+    return api(`/api/vehicles/${id}/photos/from-url`, {
+      method: 'POST',
+      body: JSON.stringify({ urls }),
+    });
+  }
+
+  async function handleIncomingFiles(files) {
+    const list = [...(files || [])];
+    if (!list.length) return;
+    if (currentVehicleId) {
+      try {
+        const data = await uploadPhotosToVehicle(currentVehicleId, list);
+        if (data.vehicle) Object.assign(v, data.vehicle);
+        showToast(data.message || 'התמונות הועלו', 'success');
+        renderMediaGallery();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+      return;
+    }
+    pendingPhotos.push(...list);
+    renderMediaGallery();
+  }
+
+  async function handleIncomingUrls(urls) {
+    const list = [...new Set((urls || []).filter(Boolean))];
+    if (!list.length) return;
+    if (currentVehicleId) {
+      try {
+        const data = await importPhotoUrlsToVehicle(currentVehicleId, list);
+        if (data.vehicle) Object.assign(v, data.vehicle);
+        showToast(data.message || 'התמונות יובאו', 'success');
+        renderMediaGallery();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+      return;
+    }
+    for (const u of list) {
+      if (!pendingPhotoUrls.includes(u)) pendingPhotoUrls.push(u);
+    }
+    renderMediaGallery();
+  }
+
+  $('#form-photo-input').onchange = async () => {
+    const files = [...($('#form-photo-input').files || [])];
+    $('#form-photo-input').value = '';
+    await handleIncomingFiles(files);
+  };
+
+  bindPhotoDropZone($('#form-photo-dropzone'), {
+    fileInput: $('#form-photo-input'),
+    onFiles: handleIncomingFiles,
+    onUrls: handleIncomingUrls,
+  });
+
+  renderMediaGallery();
+
   $('#btn-lookup').onclick = async () => {
     const plate = val($('#f-plate')).trim();
     if (!plate) {
@@ -465,13 +666,41 @@ export async function renderVehicleForm(root, { vehicleId = null } = {}) {
         throw new Error('נא למלא לפחות רישוי או יצרן');
       }
       let res;
-      if (isEdit) {
-        res = await api(`/api/vehicles/${vehicleId}`, { method: 'PATCH', body: JSON.stringify(body) });
+      if (isEdit || currentVehicleId) {
+        res = await api(`/api/vehicles/${currentVehicleId || vehicleId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(body),
+        });
       } else {
         res = await api('/api/vehicles', { method: 'POST', body: JSON.stringify(body) });
       }
-      showToast(res.message, 'success');
-      location.hash = `#/stock/edit?id=${res.vehicle.id}`;
+
+      const savedId = res.vehicle?.id;
+      const hasPendingMedia = pendingPhotos.length || pendingPhotoUrls.length;
+      if (savedId && hasPendingMedia) {
+        try {
+          let lastVehicle = res.vehicle;
+          if (pendingPhotos.length) {
+            const photoRes = await uploadPhotosToVehicle(savedId, pendingPhotos);
+            pendingPhotos = [];
+            clearPendingObjectUrls();
+            if (photoRes?.vehicle) lastVehicle = photoRes.vehicle;
+          }
+          if (pendingPhotoUrls.length) {
+            const urlRes = await importPhotoUrlsToVehicle(savedId, pendingPhotoUrls);
+            pendingPhotoUrls = [];
+            if (urlRes?.vehicle) lastVehicle = urlRes.vehicle;
+          }
+          if (lastVehicle) Object.assign(v, lastVehicle);
+          showToast(`${res.message} · תמונות הועלו`, 'success');
+        } catch (photoErr) {
+          showToast(`${res.message} · שגיאה בתמונות: ${photoErr.message}`, 'error');
+        }
+      } else {
+        showToast(res.message, 'success');
+      }
+
+      location.hash = `#/stock/edit?id=${savedId}`;
     } catch (err) {
       showToast(err.message, 'error');
     }

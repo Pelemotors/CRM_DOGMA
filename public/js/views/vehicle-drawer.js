@@ -1,6 +1,7 @@
 import { $, api, escapeHtml, showToast } from '../api.js';
 import { can } from '../auth.js';
 import { getWhatsAppStatus } from '../shell.js';
+import { bindPhotoDropZone } from '../ui/photo-dropzone.js';
 
 export function closeVehicleDrawer() {
   const drawer = $('#vehicle-drawer');
@@ -99,8 +100,12 @@ function renderVehicleDrawer(data) {
       <h3>תמונות למדיה בדיוור</h3>
       <p class="hint">העלה תמונות לרכב — בדיוור הן יישלחו אוטומטית עם ההודעה.</p>
       ${gallery}
-      <label class="btn btn-secondary file-label" style="margin-top:0.5rem">העלה תמונות לרכב
-        <input id="vehicle-photo-input" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden>
+      <div id="vehicle-photo-dropzone" class="photo-dropzone" tabindex="0" role="button" aria-label="העלאת תמונות">
+        <strong>גרור לכאן תמונות מהמחשב או מאתר אחר</strong>
+        <p class="hint">או לחץ לבחירת קבצים מהמחשב</p>
+      </div>
+      <label class="btn btn-secondary file-label" style="margin-top:0.5rem">העלה תמונות מהמחשב
+        <input id="vehicle-photo-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden>
       </label>
     </div>
 
@@ -235,21 +240,60 @@ function renderVehicleDrawer(data) {
     }
   };
 
+  async function uploadDrawerPhotos(files) {
+    const list = [...(files || [])];
+    if (!list.length) return;
+    const fd = new FormData();
+    list.forEach((f) => fd.append('photos', f));
+    const res = await fetch(`/api/vehicles/${vehicle.id}/photos`, {
+      method: 'POST',
+      credentials: 'include',
+      body: fd,
+    });
+    const data2 = await res.json();
+    if (!res.ok) throw new Error(data2.message || 'שגיאה בהעלאת תמונות');
+    showToast(data2.message, 'success');
+    openVehicleDrawer(vehicle.id);
+  }
+
+  async function importDrawerPhotoUrls(urls) {
+    const list = [...new Set((urls || []).filter(Boolean))];
+    if (!list.length) return;
+    const data2 = await api(`/api/vehicles/${vehicle.id}/photos/from-url`, {
+      method: 'POST',
+      body: JSON.stringify({ urls: list }),
+    });
+    showToast(data2.message || 'התמונות יובאו', 'success');
+    openVehicleDrawer(vehicle.id);
+  }
+
   $('#vehicle-photo-input').onchange = async () => {
     const files = [...($('#vehicle-photo-input').files || [])];
-    if (!files.length) return;
-    const fd = new FormData();
-    files.forEach((f) => fd.append('photos', f));
+    $('#vehicle-photo-input').value = '';
     try {
-      const res = await fetch(`/api/vehicles/${vehicle.id}/photos`, { method: 'POST', body: fd });
-      const data2 = await res.json();
-      if (!res.ok) throw new Error(data2.message);
-      showToast(data2.message, 'success');
-      openVehicleDrawer(vehicle.id);
+      await uploadDrawerPhotos(files);
     } catch (err) {
       showToast(err.message, 'error');
     }
   };
+
+  bindPhotoDropZone($('#vehicle-photo-dropzone'), {
+    fileInput: $('#vehicle-photo-input'),
+    onFiles: async (files) => {
+      try {
+        await uploadDrawerPhotos(files);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    },
+    onUrls: async (urls) => {
+      try {
+        await importDrawerPhotoUrls(urls);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    },
+  });
 
   $('#vehicle-drawer-body').querySelectorAll('[data-del-photo]').forEach((btn) => {
     btn.onclick = async (e) => {

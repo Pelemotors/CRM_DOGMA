@@ -22,6 +22,9 @@ const DEFAULTS = {
   ],
   defaultDownPaymentPercent: 0,
   budgetTolerancePercent: 20,
+  balloonMaxPercent: 40,
+  balloonMaxMonths: 60,
+  manualSpitzerMaxMonths: 120,
 };
 
 export function loadFinanceConfig() {
@@ -70,15 +73,112 @@ export function spitzerMonthlyPayment(principal, annualRatePercent, months) {
 }
 
 export function formatFinanceLine(quote) {
-  if (!quote?.monthlyPayment) return '';
-  const monthly = Number(quote.monthlyPayment).toLocaleString('he-IL');
+  if (!quote?.monthlyPayment && !quote?.balloonAmount) return '';
+  const monthly = Number(quote.monthlyPayment || 0).toLocaleString('he-IL');
+  if (quote.method === 'balloon') {
+    const balloon = Number(quote.balloonAmount || 0).toLocaleString('he-IL');
+    return `מימון בלון: ₪${monthly} לחודש ל-${quote.months} תשלומים + בלון ₪${balloon} בסוף (ריבית ${quote.annualRate}%)`;
+  }
   return `מימון משוער: ₪${monthly} לחודש ל-${quote.months} תשלומים (ריבית ${quote.annualRate}%, שפיצר)`;
 }
 
+function round2(n) {
+  return Math.round(Number(n) * 100) / 100;
+}
+
 /**
- * @param {{ price, year, hasComprehensive?, isNew?, downPayment?, months? }} input
+ * מחשבון ידני: סכום / פריסה / ריבית, עם מסלול שפיצר או בלון.
+ * @param {{
+ *   financeAmount?, listPrice?, price?, downPayment?,
+ *   annualRate, months?, method?, balloonPercent?
+ * }} input
+ */
+export function calculateManualFinanceQuote(input = {}) {
+  const config = loadFinanceConfig();
+  const method = input.method === 'balloon' ? 'balloon' : 'spitzer';
+  const listPrice = Math.max(0, Number(input.listPrice ?? input.price) || 0);
+  const downPayment = Math.max(0, Number(input.downPayment) || 0);
+  const rawFinance =
+    input.financeAmount != null
+      ? Number(input.financeAmount)
+      : Math.max(0, listPrice - downPayment);
+  const financeAmount = Math.max(0, Number.isFinite(rawFinance) ? rawFinance : 0);
+
+  const balloonMaxPercent = Number(config.balloonMaxPercent ?? 40);
+  const balloonMaxMonths = Number(config.balloonMaxMonths ?? 60);
+  const spitzerMaxMonths = Number(config.manualSpitzerMaxMonths ?? 120);
+  const maxMonths = method === 'balloon' ? balloonMaxMonths : spitzerMaxMonths;
+
+  let months = input.months != null ? Number(input.months) : maxMonths;
+  if (!Number.isFinite(months) || months < 1) months = maxMonths;
+  months = Math.min(Math.max(1, Math.round(months)), maxMonths);
+
+  let annualRate = Number(input.annualRate);
+  if (!Number.isFinite(annualRate) || annualRate < 0) annualRate = 0;
+
+  let balloonPercent = Number(input.balloonPercent);
+  if (!Number.isFinite(balloonPercent) || balloonPercent < 0) balloonPercent = balloonMaxPercent;
+  balloonPercent = Math.min(balloonPercent, balloonMaxPercent);
+
+  let balloonAmount = 0;
+  if (method === 'balloon') {
+    const maxByPrice = round2((listPrice * balloonPercent) / 100);
+    balloonAmount = Math.min(financeAmount, maxByPrice);
+  }
+
+  const amortPrincipal = round2(Math.max(0, financeAmount - balloonAmount));
+  const monthlyPayment = spitzerMonthlyPayment(amortPrincipal, annualRate, months);
+  const totalPaid = round2(monthlyPayment * months + balloonAmount);
+  const totalInterest = round2(totalPaid - financeAmount);
+
+  const quote = {
+    method,
+    price: listPrice,
+    listPrice,
+    downPayment,
+    financeAmount,
+    principal: financeAmount,
+    amortPrincipal,
+    balloonAmount,
+    balloonPercent: method === 'balloon' ? balloonPercent : 0,
+    year: Number(input.year) || new Date().getFullYear(),
+    hasComprehensive: input.hasComprehensive !== false,
+    isNew: Boolean(input.isNew),
+    annualRate,
+    months,
+    maxMonths,
+    monthlyPayment,
+    totalPaid,
+    totalInterest,
+    currency: 'ILS',
+    manual: true,
+  };
+
+  return {
+    ...quote,
+    financeLine: formatFinanceLine(quote),
+    monthlyDisplay: monthlyPayment.toLocaleString('he-IL'),
+    principalDisplay: financeAmount.toLocaleString('he-IL'),
+    amortPrincipalDisplay: amortPrincipal.toLocaleString('he-IL'),
+    balloonDisplay: balloonAmount.toLocaleString('he-IL'),
+    totalPaidDisplay: totalPaid.toLocaleString('he-IL'),
+  };
+}
+
+/**
+ * @param {{
+ *   price, year, hasComprehensive?, isNew?, downPayment?, months?,
+ *   method?, annualRate?, listPrice?, financeAmount?, balloonPercent?, manual?
+ * }} input
  */
 export function calculateFinanceQuote(input = {}) {
+  const isManual =
+    Boolean(input.manual) || input.method === 'balloon' || input.financeAmount != null;
+
+  if (isManual) {
+    return calculateManualFinanceQuote(input);
+  }
+
   const config = loadFinanceConfig();
   const price = Number(input.price) || 0;
   const downPayment = Math.max(0, Number(input.downPayment) || 0);
@@ -93,14 +193,19 @@ export function calculateFinanceQuote(input = {}) {
 
   const annualRate = resolveAnnualRate({ principal, hasComprehensive, isNew, config });
   const monthlyPayment = spitzerMonthlyPayment(principal, annualRate, months);
-  const totalPaid = Math.round(monthlyPayment * months * 100) / 100;
-  const totalInterest = Math.round((totalPaid - principal) * 100) / 100;
+  const totalPaid = round2(monthlyPayment * months);
+  const totalInterest = round2(totalPaid - principal);
 
   const quote = {
     method: 'spitzer',
     price,
+    listPrice: price,
     downPayment,
+    financeAmount: principal,
     principal,
+    amortPrincipal: principal,
+    balloonAmount: 0,
+    balloonPercent: 0,
     year,
     hasComprehensive,
     isNew,
@@ -111,6 +216,7 @@ export function calculateFinanceQuote(input = {}) {
     totalPaid,
     totalInterest,
     currency: 'ILS',
+    manual: false,
   };
 
   return {
@@ -118,6 +224,9 @@ export function calculateFinanceQuote(input = {}) {
     financeLine: formatFinanceLine(quote),
     monthlyDisplay: monthlyPayment.toLocaleString('he-IL'),
     principalDisplay: principal.toLocaleString('he-IL'),
+    amortPrincipalDisplay: principal.toLocaleString('he-IL'),
+    balloonDisplay: '0',
+    totalPaidDisplay: totalPaid.toLocaleString('he-IL'),
   };
 }
 

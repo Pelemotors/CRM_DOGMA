@@ -26,6 +26,7 @@ import { importLeadsFromExcel } from '../import-excel.js';
 import { importVehiclesFromExcel } from '../import-vehicles.js';
 import {
   addVehiclePhotos,
+  addVehiclePhotosFromBuffers,
   createVehicle,
   getVehicleById,
   getVehicleDocumentPath,
@@ -1104,6 +1105,108 @@ router.post('/api/vehicles/:id/photos', uploadPhotos.array('photos', 12), (req, 
       message: `הועלו ${result.added.length} תמונות`,
       vehicle: mapVehicleForUi(result.vehicle),
       added: result.added,
+    });
+  } catch (error) {
+    res.status(400).json({ message: translateError(error) });
+  }
+});
+
+router.post('/api/vehicles/:id/photos/from-url', async (req, res) => {
+  try {
+    const rawUrls = Array.isArray(req.body?.urls) ? req.body.urls : [];
+    const urls = [...new Set(rawUrls.map((u) => String(u || '').trim()).filter(Boolean))].slice(0, 10);
+    if (!urls.length) {
+      return res.status(400).json({ message: 'לא התקבלו כתובות תמונה' });
+    }
+
+    const items = [];
+    const errors = [];
+
+    for (const url of urls) {
+      try {
+        let parsed;
+        try {
+          parsed = new URL(url);
+        } catch {
+          throw new Error('כתובת לא תקינה');
+        }
+        if (!/^https?:$/i.test(parsed.protocol)) {
+          throw new Error('מותר רק http/https');
+        }
+
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 20000);
+        let response;
+        try {
+          response = await fetch(url, {
+            signal: controller.signal,
+            redirect: 'follow',
+            headers: {
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+              Referer: parsed.origin + '/',
+            },
+          });
+        } finally {
+          clearTimeout(timer);
+        }
+
+        if (!response.ok) {
+          throw new Error(`האתר החזיר ${response.status}`);
+        }
+
+        const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+        const buf = Buffer.from(await response.arrayBuffer());
+        if (!buf.length) throw new Error('קובץ ריק');
+        if (buf.length > 12 * 1024 * 1024) throw new Error('התמונה גדולה מדי');
+
+        let ext = '.jpg';
+        if (contentType.includes('png') || url.toLowerCase().includes('.png')) ext = '.png';
+        else if (contentType.includes('webp') || url.toLowerCase().includes('.webp')) ext = '.webp';
+        else if (contentType.includes('gif') || url.toLowerCase().includes('.gif')) ext = '.gif';
+        else if (contentType.includes('jpeg') || contentType.includes('jpg')) ext = '.jpg';
+        else if (!contentType.startsWith('image/')) {
+          // sniff magic bytes
+          if (buf[0] === 0x89 && buf[1] === 0x50) ext = '.png';
+          else if (buf[0] === 0xff && buf[1] === 0xd8) ext = '.jpg';
+          else if (buf[0] === 0x47 && buf[1] === 0x49) ext = '.gif';
+          else if (buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') {
+            ext = '.webp';
+          } else {
+            throw new Error('הקובץ אינו תמונה');
+          }
+        }
+
+        const nameFromUrl = path.basename(parsed.pathname || '') || `remote${ext}`;
+        items.push({
+          buffer: buf,
+          ext,
+          originalName: nameFromUrl.slice(0, 120),
+          sourceUrl: url,
+        });
+      } catch (err) {
+        const msg = err?.name === 'AbortError' ? 'תם הזמן להורדה' : err?.message || String(err);
+        errors.push({ url, message: msg });
+      }
+    }
+
+    if (!items.length) {
+      const detail = errors[0]?.message || 'לא ניתן להוריד';
+      return res.status(400).json({
+        message: `לא הצלחנו לייבא תמונות מהאתר (${detail}). נסה לשמור למחשב ולהעלות ידנית.`,
+        errors,
+      });
+    }
+
+    const result = addVehiclePhotosFromBuffers(req.params.id, items);
+    if (!result) return res.status(404).json({ message: 'רכב לא נמצא' });
+
+    res.json({
+      message: `יובאו ${result.added.length} תמונות${errors.length ? ` · ${errors.length} נכשלו` : ''}`,
+      vehicle: mapVehicleForUi(result.vehicle),
+      added: result.added,
+      errors,
     });
   } catch (error) {
     res.status(400).json({ message: translateError(error) });

@@ -347,6 +347,36 @@ body.app-body {
   z-index: 1;
 }
 
+.photo-dropzone {
+  margin-top: 0.75rem;
+  border: 2px dashed #b7c6cc;
+  border-radius: 10px;
+  padding: 1rem 0.85rem;
+  text-align: center;
+  background: #f8fafb;
+  color: #4b5c66;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.photo-dropzone:hover,
+.photo-dropzone.is-dragover {
+  border-color: #0f766e;
+  background: #e8f5f3;
+  color: #0b3d3a;
+}
+
+.photo-dropzone strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+}
+
+.photo-dropzone .hint {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
 .section-title {
   font-size: 1rem;
   color: var(--teal-800);

@@ -5,12 +5,12 @@ import { CONFIG_DIR, readJson, writeJson } from './utils.js';
 const AGENCY_FILE = path.join(CONFIG_DIR, 'agency.json');
 
 const DEFAULT_AGENCY = {
-  agencyName: 'עולם הרכב',
-  contactName: '',
+  agencyName: 'יוסי קאר',
+  contactName: 'יוסי בן שלום',
   phone: '',
-  city: '',
+  city: 'עפולה',
   address: '',
-  website: '',
+  website: 'https://www.yossicar.co.il/',
   email: '',
   notes: '',
 };

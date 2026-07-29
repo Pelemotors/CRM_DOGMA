@@ -561,6 +561,48 @@ export function addVehiclePhotos(vehicleId, files) {
   return { vehicle, added };
 }
 
+/**
+ * @param {string} vehicleId
+ * @param {{ buffer: Buffer, ext?: string, originalName?: string }[]} items
+ */
+export function addVehiclePhotosFromBuffers(vehicleId, items = []) {
+  const db = loadDb();
+  const vehicle = db.vehicles.find((v) => v.id === vehicleId);
+  if (!vehicle) return null;
+
+  if (!Array.isArray(vehicle.photos)) vehicle.photos = [];
+  const dir = getVehicleMediaDir(vehicleId);
+  const added = [];
+
+  for (const item of items) {
+    if (!item?.buffer?.length) continue;
+    let ext = String(item.ext || '.jpg').toLowerCase();
+    if (!ext.startsWith('.')) ext = `.${ext}`;
+    const safeExt = ['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(ext) ? ext : '.jpg';
+    const photoId = `ph_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const filename = `${photoId}${safeExt}`;
+    const dest = path.join(dir, filename);
+    fs.writeFileSync(dest, item.buffer);
+    const photo = {
+      id: photoId,
+      filename,
+      originalName: item.originalName || filename,
+      uploadedAt: timestamp(),
+      sourceUrl: item.sourceUrl || null,
+    };
+    vehicle.photos.push(photo);
+    added.push(photo);
+  }
+
+  if (!added.length) {
+    return { vehicle, added: [] };
+  }
+
+  vehicle.updatedAt = timestamp();
+  saveDb(db);
+  return { vehicle, added };
+}
+
 export function removeVehiclePhoto(vehicleId, photoId) {
   const db = loadDb();
   const vehicle = db.vehicles.find((v) => v.id === vehicleId);

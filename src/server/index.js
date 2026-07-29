@@ -55,7 +55,7 @@ server.listen(PORT, HOST, () => {
   const localUrl = `${scheme}://127.0.0.1:${PORT}`;
   const lanIps = getLanIPv4Addresses();
   console.log(`\n========================================`);
-  console.log(`  Olam HaRechev - Management System`);
+  console.log(`  Yossi Car - Management System`);
   console.log(`  Mode:    ${useHttps ? 'HTTPS (green lock after CA trust)' : 'HTTP'}`);
   console.log(`  Local:   ${localUrl}`);
   if (lanIps.length) {

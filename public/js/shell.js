@@ -92,7 +92,7 @@ async function loadAgencyPill() {
     const data = await api('/api/agency');
     const pill = $('#agency-pill');
     if (pill && data.agency) {
-      pill.textContent = `${data.agency.contactName || ''} — ${data.agency.agencyName || 'עולם הרכב'}`.replace(/^ — /, '');
+      pill.textContent = `${data.agency.contactName || ''} — ${data.agency.agencyName || 'יוסי קאר'}`.replace(/^ — /, '');
     }
   } catch {
     // ignore

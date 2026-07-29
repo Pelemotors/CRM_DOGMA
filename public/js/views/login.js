@@ -6,8 +6,8 @@ export function renderLogin(root, { onSuccess } = {}) {
     <div class="login-page">
       <div class="login-card">
         <div class="login-brand">
-          <div class="brand-mark">עה</div>
-          <h1>עולם הרכב</h1>
+          <div class="brand-mark">YK</div>
+          <h1>יוסי קאר</h1>
           <p class="hint">התחברות למערכת הניהול</p>
         </div>
         <form id="login-form" class="login-form">

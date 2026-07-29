@@ -19,6 +19,7 @@ import { renderVehicleFormRoute } from './views/vehicle-form.js';
 import { renderTradeIn } from './views/trade-in.js';
 import { renderDocuments } from './views/documents.js';
 import { renderCustomerProfile } from './views/customer-profile.js';
+import { renderFinanceCalculator } from './views/finance-calculator.js';
 
 const routes = {
   '/': renderHome,
@@ -26,6 +27,7 @@ const routes = {
   '/stock/new': renderVehicleFormRoute,
   '/stock/edit': renderVehicleFormRoute,
   '/trade-in': renderTradeIn,
+  '/finance-calc': renderFinanceCalculator,
   '/customers': renderCustomers,
   '/customers/new': renderCustomerNew,
   '/customers/import': renderCustomerImport,
