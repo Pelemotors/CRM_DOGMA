@@ -9,8 +9,8 @@ const NOTIFY_CONFIG = path.join(CONFIG_DIR, 'notifications.json');
 
 const DEFAULT_CONFIG = {
   inApp: { enabled: true },
-  whatsapp: { enabled: true, onAssignment: true },
-  browser: { enabled: false },
+  whatsapp: { enabled: true, onAssignment: true, onOverdueFollowup: true },
+  browser: { enabled: true },
 };
 
 export function getNotifyConfig() {
@@ -107,4 +107,76 @@ export async function notifyAssignment({
 
   if (ntf) ntf.channelsSent = channelsSent;
   return ntf;
+}
+
+function findWhatsAppActorUserId() {
+  const priority = ['system_admin', 'agency_owner', 'sales_agent'];
+  const users = listUsers().filter((u) => u.active !== false);
+  for (const role of priority) {
+    const match = users.find((u) => u.role === role);
+    if (match && isWhatsAppReady(match.id)) return match.id;
+  }
+  return null;
+}
+
+/**
+ * WhatsApp + in-app reminders for overdue follow-ups.
+ */
+export async function notifyOverdueFollowups(appointments = [], { whatsapp = true } = {}) {
+  const cfg = getNotifyConfig();
+  if (cfg.inApp?.enabled === false && !whatsapp) return { notified: 0 };
+
+  const byUser = new Map();
+  for (const apt of appointments) {
+    const uid = apt.assignedToUserId || apt.createdByUserId;
+    if (!uid) continue;
+    if (!byUser.has(uid)) byUser.set(uid, []);
+    byUser.get(uid).push(apt);
+  }
+
+  let notified = 0;
+  const actorUserId = whatsapp && cfg.whatsapp?.onOverdueFollowup !== false ? findWhatsAppActorUserId() : null;
+
+  for (const [userId, items] of byUser.entries()) {
+    const assignee = getUserById(userId);
+    const count = items.length;
+    const sample = items.slice(0, 3).map((a) => {
+      const lead = getLeadById(a.leadId);
+      return lead?.name || lead?.phone || a.leadId;
+    });
+
+    await notifyUser(userId, {
+      type: 'overdue_followup',
+      title: 'מעקבים באיחור',
+      body: `${count} תזמונים ממתינים: ${sample.join(', ')}`,
+      href: '#/today',
+    });
+
+    if (actorUserId && assignee?.mobile) {
+      try {
+        const waText = [
+          'תזכורת CRM — מעקבים באיחור',
+          `${count} משימות ממתינות לטיפול`,
+          sample.length ? `דוגמאות: ${sample.join(', ')}` : '',
+          'פתח במערכת: פניות ומעקב',
+        ]
+          .filter(Boolean)
+          .join('\n');
+
+        await sendToSingleNumber({
+          userId: actorUserId,
+          phone: assignee.mobile,
+          name: assignee.name || '',
+          customMessage: waText,
+          keepClientOpen: true,
+        });
+      } catch {
+        // quiet skip
+      }
+    }
+
+    notified += 1;
+  }
+
+  return { notified };
 }

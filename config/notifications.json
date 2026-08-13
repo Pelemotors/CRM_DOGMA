@@ -4,9 +4,10 @@
   },
   "whatsapp": {
     "enabled": true,
-    "onAssignment": true
+    "onAssignment": true,
+    "onOverdueFollowup": true
   },
   "browser": {
-    "enabled": false
+    "enabled": true
   }
 }

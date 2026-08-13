@@ -75,11 +75,22 @@ export async function renderAdmin(root) {
       <div id="template-preview" class="preview-box hidden"></div>
     </section>
 
+    <section class="panel" style="margin-bottom:1rem">
+      <h2 class="section-title">אוטומציה ותחזוקה</h2>
+      <p class="hint">גיבוי אוטומטי, קטגוריות רכב, תזכורות מעקב — לפי <code>config/automation.json</code></p>
+      <div id="automation-status" class="hint">טוען...</div>
+      <div class="actions-row">
+        <button type="button" class="btn btn-primary" id="btn-infer-categories">השלם קטגוריות רכב (אוטומטי)</button>
+        <button type="button" class="btn btn-secondary" id="btn-refresh-automation">רענן סטטוס</button>
+      </div>
+      <div id="backup-status" class="hint" style="margin-top:0.75rem"></div>
+    </section>
+
     <section class="panel">
       <h2 style="font-size:1rem;color:var(--teal-800);margin-bottom:0.5rem">מסד נתונים</h2>
       <div id="db-info" class="hint">טוען...</div>
       <div class="actions-row">
-        <button type="button" class="btn btn-secondary" id="btn-db-backup">צור גיבוי</button>
+        <button type="button" class="btn btn-secondary" id="btn-db-backup">צור גיבוי מלא (ZIP)</button>
         <button type="button" class="btn btn-danger" id="btn-db-clear">מחק את כל הלידים</button>
       </div>
     </section>
@@ -474,10 +485,52 @@ export async function renderAdmin(root) {
     try {
       const res = await api('/api/database/backup', { method: 'POST' });
       showToast(`${res.message}: ${res.backupName}`, 'success');
+      await refreshAutomationStatus();
     } catch (err) {
       showToast(err.message, 'error');
     }
   };
+
+  async function refreshAutomationStatus() {
+    const el = $('#automation-status');
+    const backupEl = $('#backup-status');
+    if (!el) return;
+    try {
+      const data = await api('/api/automation/status');
+      const cfg = data.config || {};
+      const state = data.state || {};
+      el.textContent = [
+        `גיבוי: ${cfg.backup?.enabled !== false ? `כל ${cfg.backup?.intervalHours || 24} שעות` : 'כבוי'}`,
+        `תזכורות באיחור: ${cfg.overdueReminders?.enabled !== false ? 'פעיל' : 'כבוי'}`,
+        `Carwiz מתוזמן: ${cfg.carwiz?.enabled ? `כל ${cfg.carwiz?.intervalHours || 4} שעות` : 'כבוי'}`,
+        `רכבים תקועים: ${cfg.staleInventory?.warnDays || 60}+ ימים`,
+        state.lastBackupAt ? `גיבוי אחרון: ${new Date(state.lastBackupAt).toLocaleString('he-IL')}` : 'עדיין לא בוצע גיבוי אוטומטי',
+      ].join(' · ');
+      const backups = await api('/api/database/backups');
+      if (backupEl) {
+        backupEl.textContent = backups.latest
+          ? `גיבויים: ${backups.count} · אחרון: ${backups.latest.name} (${Math.round((backups.latest.sizeBytes || 0) / 1024)} KB)`
+          : 'אין גיבויים מלאים עדיין';
+      }
+    } catch (err) {
+      el.textContent = err.message || 'שגיאה';
+    }
+  }
+
+  $('#btn-refresh-automation')?.addEventListener('click', () => refreshAutomationStatus());
+  $('#btn-infer-categories')?.addEventListener('click', async () => {
+    const btn = $('#btn-infer-categories');
+    btn.disabled = true;
+    try {
+      const res = await api('/api/vehicles/infer-categories', { method: 'POST', body: '{}' });
+      showToast(res.message, 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  refreshAutomationStatus();
 
   $('#btn-db-clear').onclick = async () => {
     if (!confirm('למחוק את כל הלידים?')) return;

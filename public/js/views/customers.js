@@ -557,6 +557,12 @@ export async function renderCustomerNew(root) {
     $('#nc-vehicle-results').innerHTML = '';
   };
 
+  if (location.hash.includes('matches=1')) {
+    setTimeout(() => {
+      $('#nc-budget-matches')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 200);
+  }
+
   $('#new-customer-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);

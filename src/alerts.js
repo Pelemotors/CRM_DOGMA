@@ -6,6 +6,7 @@ import {
   listAppointmentsRaw,
 } from './appointment-store.js';
 import { formatPhoneDisplay } from './server/hebrew.js';
+import { getStaleVehicleAlerts } from './stale-inventory.js';
 
 function formatMoney(n) {
   return Number(n || 0).toLocaleString('he-IL', {
@@ -121,6 +122,10 @@ export function buildSystemAlerts({ leadId = null } = {}) {
         message: `יש ${overdueForLead.length} תזמונים באיחור ללקוח זה`,
       });
     }
+  }
+
+  if (!leadId) {
+    alerts.push(...getStaleVehicleAlerts());
   }
 
   return alerts;

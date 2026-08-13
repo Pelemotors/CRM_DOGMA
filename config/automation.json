@@ -1,0 +1,36 @@
+{
+  "backup": {
+    "enabled": true,
+    "intervalHours": 24,
+    "keepCount": 14,
+    "includeMedia": true
+  },
+  "staleInventory": {
+    "enabled": true,
+    "warnDays": 60,
+    "criticalDays": 90
+  },
+  "roundRobin": {
+    "enabled": true,
+    "roles": ["sales_agent"]
+  },
+  "carwiz": {
+    "enabled": false,
+    "intervalHours": 4,
+    "maxLeads": 30,
+    "autoSend": false
+  },
+  "overdueReminders": {
+    "enabled": true,
+    "intervalMinutes": 60,
+    "whatsapp": true,
+    "cooldownHours": 24
+  },
+  "categories": {
+    "autoInferOnStartup": true,
+    "onlyIfEmpty": true
+  },
+  "monitoring": {
+    "enabled": true
+  }
+}

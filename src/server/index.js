@@ -10,6 +10,7 @@ import { logLive } from './live-log.js';
 import { getLanIPv4Addresses } from '../lan.js';
 import { ensureSeedAdmin } from '../users-store.js';
 import { setCookieSecure } from '../auth.js';
+import { startScheduler } from '../scheduler.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -72,6 +73,7 @@ server.listen(PORT, HOST, () => {
   }
   console.log(`========================================\n`);
   logLive('מערכת', `הדשבורד עלה — ${localUrl}`);
+  startScheduler();
 
   if (process.platform === 'win32') {
     exec(`start ${localUrl}`);

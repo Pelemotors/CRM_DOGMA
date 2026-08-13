@@ -168,6 +168,7 @@ async function loadHome(root, weekStart) {
         <h1>מסך סוכן</h1>
         <div class="actions-row" style="margin:0">
           <a class="btn btn-primary btn-small" href="#/customers/new">לקוח חדש</a>
+          <a class="btn btn-primary btn-small" href="#/customers/new?matches=1">לקוח + התאמות מלאי</a>
           <a class="btn btn-secondary btn-small" href="#/stock/new">הוסף רכב</a>
           <a class="card-link" href="#/today">פניות ומעקב ←</a>
         </div>

@@ -53,6 +53,13 @@ export async function renderStock(root) {
       <span class="field-label" style="margin:0">קטגוריות (כולן חייבות להתאים)</span>
       <div class="chip-check-row" id="f-categories">${renderCategoryCheckboxes('stockCategories', [])}</div>
     </div>
+    <div class="filters-bar" style="align-items:center">
+      <label>סינון שמור
+        <select class="select" id="f-preset"><option value="">— בחר —</option></select>
+      </label>
+      <button type="button" class="btn btn-secondary btn-small" id="btn-save-preset">שמור סינון נוכחי</button>
+      <button type="button" class="btn btn-secondary btn-small" id="btn-delete-preset">מחק סינון</button>
+    </div>
     <div id="stock-table"></div>
   `;
 
@@ -206,6 +213,84 @@ export async function renderStock(root) {
   );
   root.querySelectorAll('input[name="stockCategories"]').forEach((el) => {
     el.addEventListener('change', reload);
+  });
+
+  const PRESET_KEY = 'crm_stock_presets_v1';
+  function loadPresets() {
+    try {
+      return JSON.parse(localStorage.getItem(PRESET_KEY) || '{}');
+    } catch {
+      return {};
+    }
+  }
+  function savePresets(map) {
+    localStorage.setItem(PRESET_KEY, JSON.stringify(map));
+  }
+  function currentFilterState() {
+    return {
+      search: $('#f-search').value,
+      manufacturer: $('#f-manufacturer').value,
+      model: $('#f-model').value,
+      trim: $('#f-trim').value,
+      minYear: $('#f-minYear').value,
+      maxYear: $('#f-maxYear').value,
+      condition: $('#f-condition').value,
+      location: $('#f-location').value,
+      categories: readCheckedCategories(root, 'stockCategories'),
+    };
+  }
+  function applyFilterState(state) {
+    $('#f-search').value = state.search || '';
+    $('#f-manufacturer').value = state.manufacturer || '';
+    $('#f-model').value = state.model || '';
+    $('#f-trim').value = state.trim || '';
+    $('#f-minYear').value = state.minYear || '';
+    $('#f-maxYear').value = state.maxYear || '';
+    $('#f-condition').value = state.condition || '';
+    $('#f-location').value = state.location || '';
+    root.querySelectorAll('input[name="stockCategories"]').forEach((el) => {
+      el.checked = (state.categories || []).includes(el.value);
+    });
+    reload();
+  }
+  function refreshPresetSelect() {
+    const presets = loadPresets();
+    const sel = $('#f-preset');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">— בחר —</option>';
+    for (const name of Object.keys(presets).sort()) {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      sel.appendChild(opt);
+    }
+    if (current && presets[current]) sel.value = current;
+  }
+  refreshPresetSelect();
+  $('#f-preset')?.addEventListener('change', () => {
+    const name = $('#f-preset').value;
+    if (!name) return;
+    const presets = loadPresets();
+    if (presets[name]) applyFilterState(presets[name]);
+  });
+  $('#btn-save-preset')?.addEventListener('click', () => {
+    const name = prompt('שם לסינון השמור:');
+    if (!name?.trim()) return;
+    const presets = loadPresets();
+    presets[name.trim()] = currentFilterState();
+    savePresets(presets);
+    refreshPresetSelect();
+    $('#f-preset').value = name.trim();
+    showToast('הסינון נשמר', 'success');
+  });
+  $('#btn-delete-preset')?.addEventListener('click', () => {
+    const name = $('#f-preset').value;
+    if (!name) return;
+    const presets = loadPresets();
+    delete presets[name];
+    savePresets(presets);
+    refreshPresetSelect();
+    showToast('הסינון נמחק', 'success');
   });
 
   $('#stock-file')?.addEventListener('change', async () => {

@@ -1,4 +1,4 @@
-import { $, $$, api } from './api.js';
+import { $, $$, api, debounce } from './api.js';
 import { getCurrentUser } from './auth.js';
 
 const GROUP_ROUTES = {
@@ -34,6 +34,7 @@ export function updateUserChrome() {
   const user = getCurrentUser();
   const pill = $('#user-pill');
   const btn = $('#btn-logout');
+  const searchWrap = $('#global-search-wrap');
   if (pill) {
     if (user) {
       pill.textContent = `${user.name} · ${user.roleLabel || ''}`;
@@ -43,6 +44,7 @@ export function updateUserChrome() {
     }
   }
   if (btn) btn.classList.toggle('hidden', !user);
+  if (searchWrap) searchWrap.classList.toggle('hidden', !user);
 }
 
 export function initShell({ onRoute }) {
@@ -81,6 +83,7 @@ export function initShell({ onRoute }) {
   loadAgencyPill();
   updateUserChrome();
   initNotifications();
+  initGlobalSearch();
 
   const route = parseRoute();
   setActiveNav(route);
@@ -263,4 +266,74 @@ function initNotifications() {
   refreshNotifications();
   // Poll less often to keep UI calm
   setInterval(refreshNotifications, 60000);
+}
+
+function escapeSearchHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function initGlobalSearch() {
+  const input = $('#global-search');
+  const panel = $('#global-search-results');
+  if (!input || !panel) return;
+
+  const runSearch = debounce(async () => {
+    const q = input.value.trim();
+    if (q.length < 2) {
+      panel.classList.add('hidden');
+      panel.innerHTML = '';
+      return;
+    }
+    try {
+      const data = await api(`/api/search?q=${encodeURIComponent(q)}`);
+      const leads = data.leads || [];
+      const vehicles = data.vehicles || [];
+      if (!leads.length && !vehicles.length) {
+        panel.innerHTML = '<div class="hint" style="padding:0.75rem">לא נמצאו תוצאות</div>';
+      } else {
+        panel.innerHTML = [
+          leads.length
+            ? `<div class="global-search-group">לקוחות</div>${leads
+                .map(
+                  (l) =>
+                    `<button type="button" class="global-search-item" data-href="#/customers/${escapeSearchHtml(l.id)}">${escapeSearchHtml(l.name || l.phone)} · ${escapeSearchHtml(l.phoneDisplay || l.phone || '')}</button>`
+                )
+                .join('')}`
+            : '',
+          vehicles.length
+            ? `<div class="global-search-group">רכבים</div>${vehicles
+                .map(
+                  (v) =>
+                    `<button type="button" class="global-search-item" data-href="#/stock/edit?id=${encodeURIComponent(v.id)}">${escapeSearchHtml(v.manufacturer || '')} ${escapeSearchHtml(v.model || '')} · ${escapeSearchHtml(v.plate || v.systemId || '')}</button>`
+                )
+                .join('')}`
+            : '',
+        ].join('');
+      }
+      panel.classList.remove('hidden');
+      panel.querySelectorAll('[data-href]').forEach((btn) => {
+        btn.onclick = () => {
+          location.hash = btn.dataset.href.replace(/^#/, '#');
+          panel.classList.add('hidden');
+          input.value = '';
+        };
+      });
+    } catch {
+      panel.classList.add('hidden');
+    }
+  }, 280);
+
+  input.addEventListener('input', runSearch);
+  input.addEventListener('focus', () => {
+    if (input.value.trim().length >= 2) runSearch();
+  });
+  document.addEventListener('click', (e) => {
+    if (!input.contains(e.target) && !panel.contains(e.target)) {
+      panel.classList.add('hidden');
+    }
+  });
 }

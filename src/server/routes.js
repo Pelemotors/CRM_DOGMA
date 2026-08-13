@@ -123,6 +123,10 @@ import {
   clearAllLeads,
   getLocalDbInfo,
 } from '../local-db.js';
+import { getBackupStatus } from '../backup-full.js';
+import { resolveLeadAssignee } from '../lead-assignment.js';
+import { autoInferAllVehicleCategories } from '../vehicle-category-infer.js';
+import { getSchedulerStatus } from '../scheduler.js';
 import {
   createInterest,
   getInterestsForLead,
@@ -391,6 +395,66 @@ router.post('/api/database/backup', requireManager, (_req, res) => {
   }
 });
 
+router.get('/api/database/backups', requireManager, (_req, res) => {
+  try {
+    res.json(getBackupStatus());
+  } catch (error) {
+    res.status(500).json({ message: translateError(error) });
+  }
+});
+
+router.get('/api/health', (_req, res) => {
+  res.json({
+    ok: true,
+    uptimeSeconds: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+  });
+});
+
+router.get('/api/automation/status', requireManager, (_req, res) => {
+  try {
+    res.json(getSchedulerStatus());
+  } catch (error) {
+    res.status(500).json({ message: translateError(error) });
+  }
+});
+
+router.post('/api/vehicles/infer-categories', requireManager, (req, res) => {
+  try {
+    const onlyIfEmpty = req.body?.onlyIfEmpty !== false;
+    const result = autoInferAllVehicleCategories({ onlyIfEmpty });
+    res.json({ message: `עודכנו ${result.updated} רכבים`, ...result });
+  } catch (error) {
+    res.status(400).json({ message: translateError(error) });
+  }
+});
+
+router.get('/api/search', (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (q.length < 2) {
+      return res.json({ leads: [], vehicles: [], q });
+    }
+    const scope = viewerLeadScope(req);
+    const leadResult = queryLeads({
+      search: q,
+      page: 1,
+      pageSize: 8,
+      ...scope,
+    });
+    const vehicles = searchVehicles({ search: q })
+      .slice(0, 8)
+      .map((v) => mapVehicleForUi(v));
+    res.json({
+      q,
+      leads: leadResult.items.map((l) => mapLeadForUi(l)),
+      vehicles,
+    });
+  } catch (error) {
+    res.status(400).json({ message: translateError(error) });
+  }
+});
+
 router.post('/api/database/clear', requireManager, (_req, res) => {
   try {
     const result = clearAllLeads();
@@ -491,8 +555,16 @@ router.post('/api/leads', (req, res) => {
     const isManager = canViewAllCustomers(req);
     let assignedToUserId = body.assignedToUserId ? String(body.assignedToUserId) : '';
     let assignedToName = body.assignedToName ? String(body.assignedToName) : '';
-    // נציג — תמיד מוקצה לעצמו; מנהל — אם לא בחר, מוקצה ליוצר
-    if (!isManager || !assignedToUserId) {
+
+    if (!assignedToUserId) {
+      const resolved = resolveLeadAssignee({
+        isManager,
+        actorUserId: actor.userId,
+        actorUserName: actor.userName,
+      });
+      assignedToUserId = resolved.assignedToUserId;
+      assignedToName = resolved.assignedToName;
+    } else if (!isManager) {
       assignedToUserId = actor.userId;
       assignedToName = actor.userName;
     }
@@ -508,6 +580,16 @@ router.post('/api/leads', (req, res) => {
       assignedToUserId,
       assignedToName,
     });
+    if (assignedToUserId && assignedToUserId !== actor.userId) {
+      notifyAssignment({
+        assigneeUserId: assignedToUserId,
+        actorUserId: actor.userId,
+        actorName: actor.userName,
+        title: 'לקוח חדש הוקצה אליך',
+        body: `${lead.name || lead.phone} — לקוח חדש`,
+        leadId: lead.id,
+      }).catch(() => {});
+    }
     res.json({ message: 'הלקוח נוצר בהצלחה', lead: mapLeadForUi(lead) });
   } catch (error) {
     res.status(400).json({ message: translateError(error) });

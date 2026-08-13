@@ -3,6 +3,7 @@ import { readJson, timestamp, writeJson } from './utils.js';
 import { LOCAL_DB_FILE, ensureLocalDirs } from './local-db.js';
 import { addActivity } from './activity-store.js';
 import { normalizeCategories } from './vehicle-categories.js';
+import { pickNextSalesAgent } from './lead-assignment.js';
 
 const LEADS_FILE = LOCAL_DB_FILE;
 
@@ -214,6 +215,13 @@ export function upsertCarwizLead({
       carwizSearchText: searchText || '',
       updatedAt: timestamp(),
     };
+    const agent = pickNextSalesAgent();
+    if (agent) {
+      lead.assignedToUserId = agent.id;
+      lead.assignedToName = agent.name;
+      lead.createdByUserId = agent.id;
+      lead.createdByName = agent.name;
+    }
     db.leads.unshift(lead);
     addActivity({
       type: 'lead_imported',

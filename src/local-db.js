@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { DATA_DIR, ROOT_DIR, timestamp, writeJson } from './utils.js';
+import { createFullDataBackup } from './backup-full.js';
 
 export const LOCAL_DB_FILE = path.join(DATA_DIR, 'leads.json');
 export const LOCAL_IMPORTS_DIR = path.join(DATA_DIR, 'imports');
@@ -107,19 +108,23 @@ export function getLocalDbInfo() {
 
 export function backupLocalDb() {
   ensureLocalDirs();
-  if (!fs.existsSync(LOCAL_DB_FILE)) {
-    throw new Error('אין מסד נתונים לגיבוי');
+  try {
+    return createFullDataBackup({ keepCount: 14 });
+  } catch (err) {
+    if (!fs.existsSync(LOCAL_DB_FILE)) {
+      throw new Error('אין מסד נתונים לגיבוי');
+    }
+    const backupName = `leads-backup-${Date.now()}.json`;
+    const backupPath = path.join(LOCAL_EXPORTS_DIR, backupName);
+    fs.copyFileSync(LOCAL_DB_FILE, backupPath);
+    return {
+      message: 'גיבוי לידים נוצר (גיבוי מלא נכשל)',
+      backupPath,
+      backupName,
+      full: false,
+      error: err.message,
+    };
   }
-
-  const backupName = `leads-backup-${Date.now()}.json`;
-  const backupPath = path.join(LOCAL_EXPORTS_DIR, backupName);
-  fs.copyFileSync(LOCAL_DB_FILE, backupPath);
-
-  return {
-    message: 'גיבוי נוצר בהצלחה',
-    backupPath,
-    backupName,
-  };
 }
 
 export function clearAllLeads() {
