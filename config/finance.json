@@ -1,0 +1,20 @@
+{
+  "method": "spitzer",
+  "withoutComprehensive": [
+    { "maxAmount": 85000, "annualRate": 10.4 },
+    { "maxAmount": 120000, "annualRate": 14.5 }
+  ],
+  "withComprehensive": {
+    "usedAnnualRate": 9.9,
+    "newAnnualRate": 8.4
+  },
+  "maxMonthsByYear": [
+    { "minYear": 2005, "maxYear": 2020, "maxMonths": 60 },
+    { "minYear": 2021, "maxYear": 2021, "maxMonths": 72 },
+    { "minYear": 2022, "maxYear": 2022, "maxMonths": 84 },
+    { "minYear": 2023, "maxYear": 2025, "maxMonths": 100 },
+    { "minYear": 2026, "maxYear": 2099, "maxMonths": 120 }
+  ],
+  "defaultDownPaymentPercent": 0,
+  "budgetTolerancePercent": 20
+}

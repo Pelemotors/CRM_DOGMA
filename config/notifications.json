@@ -1,0 +1,13 @@
+{
+  "inApp": {
+    "enabled": true
+  },
+  "whatsapp": {
+    "enabled": true,
+    "onAssignment": true,
+    "onOverdueFollowup": true
+  },
+  "browser": {
+    "enabled": true
+  }
+}

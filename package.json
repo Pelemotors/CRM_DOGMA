@@ -1,0 +1,39 @@
+{
+  "name": "lead-tracker",
+  "version": "1.0.0",
+  "description": "מעקב וטיפול בלידים עם שליחת הודעות WhatsApp דרך whatsapp-web.js",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dashboard": "node src/server/index.js",
+    "dev": "node src/server/index.js",
+    "stop": "powershell -Command \"Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; Write-Host 'פורט 3000 שוחרר'\"",
+    "import": "node src/index.js import",
+    "send": "node src/index.js send",
+    "status": "node src/index.js status",
+    "login": "node src/index.js login",
+    "test:smoke": "node scripts/test-smoke.js",
+    "test:ai": "node scripts/test-ai-layer.js",
+    "test:ai-e2e": "node scripts/test-ai-e2e.js",
+    "test:ai-phase3a": "node scripts/test-ai-phase3a.js",
+    "verify:public-ai": "node scripts/verify-public-ai-tunnel.js",
+    "seed:demo-vehicles": "node scripts/seed-demo-vehicles.js --replace"
+  },
+  "keywords": [
+    "leads",
+    "whatsapp",
+    "whatsapp-web.js"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.22.2",
+    "multer": "^2.0.0",
+    "nodemailer": "^9.0.3",
+    "puppeteer": "^24.38.0",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "^1.26.0",
+    "xlsx": "^0.18.5"
+  }
+}

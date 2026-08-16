@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wonder מוטורס — מערכת ניהול</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body class="app-body">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-mark">WM</div>
+      <div>
+        <strong>Wonder מוטורס</strong>
+        <div class="brand-sub">מערכת ניהול</div>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a href="#/" class="nav-link" data-route="/">מסך סוכן</a>
+      <a href="#/stock" class="nav-link" data-route="/stock">מלאי רכבים</a>
+      <a href="#/trade-in" class="nav-link" data-route="/trade-in">בדיקת רכב להחלפה</a>
+      <a href="#/finance-calc" class="nav-link" data-route="/finance-calc">מחשבון מימון</a>
+      <a href="#/sales" class="nav-link" data-route="/sales">מכירות</a>
+      <a href="#/documents" class="nav-link" data-route="/documents">הפקת מסמכים</a>
+      <a href="#/cashier" class="nav-link" data-route="/cashier">קופה</a>
+      <a href="#/reports" class="nav-link" data-route="/reports">דוחות</a>
+      <a href="#/users" class="nav-link" data-route="/users" data-perm="users">ניהול משתמשים</a>
+
+      <div class="nav-group">
+        <button type="button" class="nav-group-toggle" data-group="customers">לקוחות</button>
+        <div class="nav-sub" data-sub="customers">
+          <a href="#/customers" class="nav-link" data-route="/customers">רשימת לקוחות</a>
+          <a href="#/customers/new" class="nav-link" data-route="/customers/new">לקוח חדש</a>
+          <a href="#/customers/import" class="nav-link" data-route="/customers/import">טעינת XLS / לידים</a>
+        </div>
+      </div>
+
+      <a href="#/today" class="nav-link" data-route="/today">פניות ומעקב</a>
+      <a href="#/agency" class="nav-link" data-route="/agency" data-perm="agency">נתוני הסוכנות</a>
+      <a href="#/whatsapp" class="nav-link" data-route="/whatsapp">WhatsApp / שליחה</a>
+      <a href="#/admin" class="nav-link" data-route="/admin" data-perm="admin">ממשק ניהול</a>
+    </nav>
+  </aside>
+
+  <div class="app-main">
+    <header class="topbar">
+      <div class="topbar-right">
+        <button type="button" class="btn-icon mobile-menu" id="btn-mobile-menu" aria-label="תפריט">☰</button>
+        <div class="agency-pill" id="agency-pill">Wonder מוטורס</div>
+        <div class="global-search-wrap hidden" id="global-search-wrap">
+          <input type="search" id="global-search" class="input global-search-input" placeholder="חיפוש לקוח / רכב / רישוי..." autocomplete="off">
+          <div id="global-search-results" class="global-search-results hidden"></div>
+        </div>
+      </div>
+      <div class="topbar-left">
+        <div class="notif-wrap">
+          <button type="button" class="btn-icon" id="btn-notifications" aria-label="התראות">🔔</button>
+          <span id="notif-badge" class="notif-badge hidden">0</span>
+          <div id="notif-panel" class="notif-panel hidden" aria-hidden="true">
+            <div class="notif-panel-head">
+              <strong>התראות</strong>
+              <button type="button" class="btn btn-small btn-secondary" id="btn-notif-read-all">סמן הכל כנקרא</button>
+            </div>
+            <div id="notif-list" class="notif-list"></div>
+          </div>
+        </div>
+        <span id="user-pill" class="agency-pill hidden"></span>
+        <button type="button" class="btn btn-secondary btn-small hidden" id="btn-logout">התנתק</button>
+        <span id="whatsapp-badge" class="badge badge-gray">בודק...</span>
+        <span id="clock" class="clock"></span>
+      </div>
+    </header>
+
+    <div id="toast" class="toast hidden"></div>
+    <main id="view-root" class="view-root"></main>
+  </div>
+
+  <aside id="lead-drawer" class="lead-drawer hidden" aria-hidden="true">
+    <div class="lead-drawer-backdrop" id="lead-drawer-backdrop"></div>
+    <div class="lead-drawer-panel">
+      <div class="lead-drawer-header">
+        <h2 id="drawer-title">פרטי לקוח</h2>
+        <button type="button" id="btn-close-drawer" class="btn btn-secondary btn-small">סגור</button>
+      </div>
+      <div id="drawer-body" class="lead-drawer-body"></div>
+    </div>
+  </aside>
+
+  <aside id="vehicle-drawer" class="lead-drawer hidden" aria-hidden="true">
+    <div class="lead-drawer-backdrop" id="vehicle-drawer-backdrop"></div>
+    <div class="lead-drawer-panel" style="width:min(520px,100%)">
+      <div class="lead-drawer-header">
+        <h2 id="vehicle-drawer-title">פרטי רכב</h2>
+        <button type="button" id="btn-close-vehicle-drawer" class="btn btn-secondary btn-small">סגור</button>
+      </div>
+      <div id="vehicle-drawer-body" class="lead-drawer-body"></div>
+    </div>
+  </aside>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

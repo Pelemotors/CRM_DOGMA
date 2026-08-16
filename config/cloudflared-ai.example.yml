@@ -1,0 +1,17 @@
+# Cloudflare Tunnel — Wonder AI only (example)
+# Copy to a local cloudflared config (do not commit secrets / account tokens).
+#
+# Exposes ONLY /api/ai/* to the public hostname.
+# Everything else returns 404 at the tunnel edge (CRM API/UI stay private).
+
+tunnel: <TUNNEL_UUID>
+credentials-file: C:/path/to/<TUNNEL_UUID>.json
+
+ingress:
+  # Public AI gateway only
+  - hostname: ai-agency.example.com
+    path: /api/ai/*
+    service: http://127.0.0.1:3000
+
+  # Catch-all — do NOT publish the rest of the CRM
+  - service: http_status:404
