@@ -1,8 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import puppeteer from 'puppeteer';
-import { CONFIG_DIR, DATA_DIR, ROOT_DIR, timestamp } from '../utils.js';
-import { getAgency } from '../agency-store.js';
+import { CONFIG_DIR, DATA_DIR, timestamp } from '../utils.js';
+import { agencyDisplayName, getAgency, getAgencyLogoPath } from '../agency-store.js';
 import { getSaleById } from '../sales-store.js';
 import { listPayments, PAYMENT_METHOD_LABELS } from '../payments-store.js';
 import { ensureLocalDirs } from '../local-db.js';
@@ -40,24 +40,8 @@ function newCarOrdersDocsDir(orderNumber) {
   return path.join(DATA_DIR, 'documents', 'new-car-orders', String(orderNumber));
 }
 
-function resolveLogoPath() {
-  const branding = path.join(ROOT_DIR, 'public', 'assets', 'branding');
-  // לוגו אופציונלי להדבקה במסמכי PDF — כולל קובץ מותג ישן כנכס נתונים לשימוש חופשי
-  const candidates = [
-    path.join(branding, 'logo.png'),
-    path.join(branding, 'logo.avif'),
-    path.join(branding, 'logo.webp'),
-    path.join(branding, 'logo.jpg'),
-    path.join(branding, 'yossicar-logo.png'),
-    path.join(branding, 'yossicar-logo.avif'),
-    path.join(branding, 'yossicar-logo.webp'),
-    path.join(branding, 'yossicar-logo.jpg'),
-  ];
-  return candidates.find((p) => fs.existsSync(p)) || null;
-}
-
 function logoDataUri() {
-  const logoPath = resolveLogoPath();
+  const logoPath = getAgencyLogoPath();
   if (!logoPath) return null;
   const ext = path.extname(logoPath).toLowerCase().replace('.', '');
   const mime =
@@ -67,24 +51,24 @@ function logoDataUri() {
         ? 'image/jpeg'
         : ext === 'webp'
           ? 'image/webp'
-          : ext === 'avif'
-            ? 'image/avif'
+          : ext === 'gif'
+            ? 'image/gif'
             : 'application/octet-stream';
   const buf = fs.readFileSync(logoPath);
   return `data:${mime};base64,${buf.toString('base64')}`;
 }
 
 function agencyHeaderHtml(agency, badgeLabel, metaRightHtml) {
+  const name = escapeHtml(agencyDisplayName(agency));
   const logo = logoDataUri();
-  const logoAlt = escapeHtml(agency.agencyName || 'Wonder מוטורס');
   const logoHtml = logo
-    ? `<img src="${logo}" alt="${logoAlt}" style="max-height:72px;max-width:180px;object-fit:contain;display:block;margin-bottom:8px">`
+    ? `<img src="${logo}" alt="${name}" style="max-height:72px;max-width:180px;object-fit:contain;display:block;margin-bottom:8px">`
     : '';
   return `
     <div class="row" style="align-items:flex-start">
       <div>
         ${logoHtml}
-        <h1>${escapeHtml(agency.agencyName || 'Wonder מוטורס')}</h1>
+        <h1>${name}</h1>
         <div class="muted">${escapeHtml(agency.address || '')} ${escapeHtml(agency.city || '')}</div>
         <div class="muted">${escapeHtml(agency.phone || '')} ${escapeHtml(agency.email || '')}</div>
         ${agency.website ? `<div class="muted">${escapeHtml(agency.website)}</div>` : ''}

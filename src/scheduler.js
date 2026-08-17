@@ -159,6 +159,20 @@ async function tick() {
   await runOverdueIfDue(cfg, state);
   await runCarwizIfDue(cfg, state);
 
+  try {
+    const { processSyncQueue } = await import('./sync/vehicle-sync.js');
+    await processSyncQueue();
+  } catch (err) {
+    logLive('סנכרון', `שגיאת sync queue: ${err.message}`);
+  }
+
+  try {
+    const { pollLeadInbox } = await import('./sync/website-lead.js');
+    await pollLeadInbox();
+  } catch (err) {
+    logLive('לידים', `שגיאת poll inbox: ${err.message}`);
+  }
+
   if (!staleChecked) {
     staleChecked = true;
     checkStaleInventory(cfg);

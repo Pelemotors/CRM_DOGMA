@@ -1,13 +1,29 @@
 import { $, escapeHtml, showToast } from '../api.js';
 import { login } from '../auth.js';
 
+function applyLoginBrand(branding) {
+  const name = String(branding?.agencyName || '').trim() || 'T.A Motors';
+  const title = $('#login-agency-name');
+  if (title) title.textContent = name;
+
+  const img = $('#login-logo');
+  if (branding?.hasLogo && branding.logoUrl && img) {
+    img.src = branding.logoUrl;
+    img.alt = name;
+    img.classList.remove('hidden');
+  } else if (img) {
+    img.classList.add('hidden');
+    img.removeAttribute('src');
+  }
+}
+
 export function renderLogin(root, { onSuccess } = {}) {
   root.innerHTML = `
     <div class="login-page">
       <div class="login-card">
         <div class="login-brand">
-          <div class="brand-mark">WM</div>
-          <h1>Wonder מוטורס</h1>
+          <img id="login-logo" class="brand-logo hidden" alt="" style="margin:0 auto 0.75rem;width:72px;height:72px">
+          <h1 id="login-agency-name">T.A Motors</h1>
           <p class="hint">התחברות למערכת הניהול</p>
         </div>
         <form id="login-form" class="login-form">
@@ -25,6 +41,13 @@ export function renderLogin(root, { onSuccess } = {}) {
       </div>
     </div>
   `;
+
+  fetch('/api/agency/branding', { credentials: 'include' })
+    .then((res) => (res.ok ? res.json() : null))
+    .then((data) => {
+      if (data) applyLoginBrand(data);
+    })
+    .catch(() => {});
 
   $('#login-form').onsubmit = async (e) => {
     e.preventDefault();

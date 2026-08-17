@@ -58,6 +58,34 @@ body.app-body {
   font-weight: 800;
 }
 
+.brand-logo {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: #fff;
+  flex-shrink: 0;
+}
+
+.logo-drop {
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+  background: #f8faf9;
+  cursor: pointer;
+}
+.logo-drop.is-dragover {
+  border-color: var(--teal-700);
+  background: #e8f5f3;
+}
+.agency-logo-preview {
+  max-height: 88px;
+  max-width: 240px;
+  object-fit: contain;
+  display: block;
+  margin: 0.5rem 0;
+}
+
 .brand-sub { font-size: 0.75rem; opacity: 0.75; }
 
 .sidebar-nav {

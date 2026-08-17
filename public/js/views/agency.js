@@ -1,4 +1,13 @@
 import { $, api, escapeHtml, showToast } from '../api.js';
+import { applyAgencyBrand } from '../shell.js';
+import { bindPhotoDropZone, isImageFile } from '../ui/photo-dropzone.js';
+
+function logoPreviewHtml(agency) {
+  if (agency.hasLogo && agency.logoUrl) {
+    return `<img class="agency-logo-preview" src="${escapeHtml(agency.logoUrl)}" alt="${escapeHtml(agency.agencyName || '')}">`;
+  }
+  return `<p class="hint" id="logo-empty-hint">אין לוגו — במסמכים יופיע שם הסוכנות בלבד.</p>`;
+}
 
 export async function renderAgency(root) {
   root.innerHTML = `<div class="empty">טוען נתוני סוכנות...</div>`;
@@ -49,6 +58,20 @@ export async function renderAgency(root) {
         </div>
       </form>
 
+      <section class="panel" style="margin-top:1.25rem">
+        <h2 class="section-title">לוגו הסוכנות</h2>
+        <p class="hint">אופציונלי. אם אין לוגו — המערכת והמסמכים המופקים מציגים את שם הסוכנות בלבד, בלי תמונת ברירת מחדל.</p>
+        <div id="logo-preview">${logoPreviewHtml(a)}</div>
+        <div class="logo-drop" id="logo-drop">
+          גרור תמונה לכאן או לחץ לבחירת קובץ (PNG / JPG / WEBP)
+          <input type="file" id="logo-file" accept="image/png,image/jpeg,image/webp,image/gif" class="hidden">
+        </div>
+        <div class="actions-row" style="margin-top:0.75rem">
+          <button type="button" class="btn btn-primary" id="btn-logo-pick">העלה לוגו</button>
+          <button type="button" class="btn btn-secondary ${a.hasLogo ? '' : 'hidden'}" id="btn-logo-remove">הסר לוגו</button>
+        </div>
+      </section>
+
       <div class="dash-grid" style="margin-top:1.25rem">
         <section class="dash-card">
           <h3>סיכום מלאי</h3>
@@ -75,14 +98,72 @@ export async function renderAgency(root) {
       </div>
     `;
 
+    function refreshLogoUi(agency) {
+      $('#logo-preview').innerHTML = logoPreviewHtml(agency);
+      $('#btn-logo-remove').classList.toggle('hidden', !agency.hasLogo);
+      applyAgencyBrand(agency);
+    }
+
+    async function uploadLogo(file) {
+      if (!isImageFile(file)) {
+        showToast('נא לבחור קובץ תמונה', 'error');
+        return;
+      }
+      const body = new FormData();
+      body.append('logo', file);
+      const res = await fetch('/api/agency/logo', {
+        method: 'POST',
+        credentials: 'include',
+        body,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'שגיאה בהעלאת לוגו');
+      showToast(data.message || 'הלוגו נשמר', 'success');
+      refreshLogoUi(data.agency || {});
+    }
+
     $('#agency-form').onsubmit = async (e) => {
       e.preventDefault();
       const body = Object.fromEntries(new FormData(e.target).entries());
       try {
         const res = await api('/api/agency', { method: 'PUT', body: JSON.stringify(body) });
         showToast(res.message, 'success');
-        const pill = document.querySelector('#agency-pill');
-        if (pill) pill.textContent = `${body.contactName || ''} — ${body.agencyName || ''}`.replace(/^ — /, '');
+        applyAgencyBrand(res.agency || body);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    };
+
+    const fileInput = $('#logo-file');
+    $('#btn-logo-pick').onclick = () => fileInput.click();
+    fileInput.onchange = async () => {
+      const file = fileInput.files?.[0];
+      fileInput.value = '';
+      if (!file) return;
+      try {
+        await uploadLogo(file);
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    };
+
+    bindPhotoDropZone($('#logo-drop'), {
+      fileInput,
+      onFiles: async (files) => {
+        if (!files[0]) return;
+        try {
+          await uploadLogo(files[0]);
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      },
+    });
+
+    $('#btn-logo-remove').onclick = async () => {
+      try {
+        const res = await api('/api/agency/logo', { method: 'DELETE' });
+        showToast(res.message, 'success');
+        refreshLogoUi(res.agency || { hasLogo: false, agencyName: a.agencyName });
       } catch (err) {
         showToast(err.message, 'error');
       }

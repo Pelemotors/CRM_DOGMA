@@ -13,7 +13,7 @@ import { ensureSeedAdmin } from '../users-store.js';
 import { setCookieSecure } from '../auth.js';
 import { startScheduler } from '../scheduler.js';
 
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = Number(process.env.PORT) || 3001;
 const HOST = process.env.HOST || '0.0.0.0';
 
 const CERT_DIR = path.join(ROOT_DIR, 'certs');

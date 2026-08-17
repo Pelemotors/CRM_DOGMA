@@ -17,6 +17,9 @@ data/notifications.json
 data/new-car-orders.json
 data/gov-car-catalog.json
 data/carwiz-last-scrape.json
+data/sync-queue.json
+data/scheduler-state.json
+data/sms-outbox.json
 data/ai-audit.json
 data/ai-e2e-report.json
 data/exports/*
@@ -37,6 +40,8 @@ data/vehicle-media/**
 !data/vehicle-media/.gitkeep
 data/vehicle-docs/**
 !data/vehicle-docs/.gitkeep
+data/branding/**
+!data/branding/.gitkeep
 
 .env
 *.log

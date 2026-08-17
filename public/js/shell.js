@@ -92,14 +92,39 @@ export function initShell({ onRoute }) {
 
 async function loadAgencyPill() {
   try {
-    const data = await api('/api/agency');
-    const pill = $('#agency-pill');
-    if (pill && data.agency) {
-      pill.textContent = `${data.agency.contactName || ''} — ${data.agency.agencyName || 'Wonder מוטורס'}`.replace(/^ — /, '');
-    }
+    const data = await api('/api/agency/branding');
+    applyAgencyBrand(data);
   } catch {
     // ignore
   }
+}
+
+export function applyAgencyBrand(agency = {}) {
+  const name = String(agency.agencyName || '').trim() || 'T.A Motors';
+  const hasLogo = Boolean(agency.hasLogo && agency.logoUrl);
+  const pill = $('#agency-pill');
+  if (pill) {
+    const contact = agency.contactName || '';
+    pill.textContent = contact ? `${contact} — ${name}` : name;
+  }
+
+  const nameEl = $('#sidebar-agency-name');
+  if (nameEl) nameEl.textContent = name;
+
+  const img = $('#sidebar-logo');
+  if (img) {
+    if (hasLogo) {
+      img.src = agency.logoUrl;
+      img.alt = name;
+      img.classList.remove('hidden');
+    } else {
+      img.removeAttribute('src');
+      img.alt = '';
+      img.classList.add('hidden');
+    }
+  }
+
+  document.title = `${name} — מערכת ניהול`;
 }
 
 let waStatus = { connected: false, statusLabel: 'לא מחובר', status: 'disconnected', qrImage: null };

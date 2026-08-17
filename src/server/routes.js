@@ -50,7 +50,16 @@ import {
 } from '../gov-catalog.js';
 import { lookupPlateFull } from '../scrapers/index.js';
 import { lookupPlateFromGov } from '../plate-lookup.js';
-import { getAgency, saveAgency } from '../agency-store.js';
+import {
+  getAgency,
+  getAgencyBranding,
+  getAgencyLogoMime,
+  getAgencyLogoPath,
+  removeAgencyLogo,
+  saveAgency,
+  saveAgencyLogoFromUpload,
+  toPublicAgency,
+} from '../agency-store.js';
 import { addActivity, getActivitiesForLead } from '../activity-store.js';
 import { CONFIG_DIR, DATA_DIR, ROOT_DIR, formatMessage, normalizePhone, readJson, readText } from '../utils.js';
 import XLSX from 'xlsx';
@@ -183,6 +192,8 @@ import {
   ROLES,
   updateUser,
 } from '../users-store.js';
+import { getIntegrationConfig } from '../sync/supabase-client.js';
+import { ingestWebsiteLead } from '../sync/website-lead.js';
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -230,6 +241,27 @@ function setSendInProgress(userId, busy) {
   if (busy) sendInProgressByUser.add(userId);
   else sendInProgressByUser.delete(userId);
 }
+
+function verifyInboundApiKey(req) {
+  const cfg = getIntegrationConfig();
+  const expected =
+    cfg.inboundApiKey || cfg.websiteLeadApiKey || process.env.CRM_INBOUND_API_KEY || '';
+  if (!expected) return false;
+  const header = req.headers['x-api-key'] || req.headers['X-API-Key'];
+  return header === expected;
+}
+
+router.post('/api/webhooks/website-lead', async (req, res) => {
+  if (!verifyInboundApiKey(req)) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+  try {
+    const result = await ingestWebsiteLead(req.body || {});
+    res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (error) {
+    res.status(400).json({ message: error.message || 'שגיאה בקליטת ליד' });
+  }
+});
 
 router.post('/api/auth/login', (req, res) => {
   try {
@@ -1317,9 +1349,48 @@ router.get('/api/vehicles/doc-types', (_req, res) => {
   res.json({ types: VEHICLE_DOC_TYPES });
 });
 
+router.get('/api/agency/branding', (_req, res) => {
+  try {
+    res.json(getAgencyBranding());
+  } catch (error) {
+    res.status(500).json({ message: translateError(error) });
+  }
+});
+
+router.get('/api/agency/logo', (_req, res) => {
+  const logoPath = getAgencyLogoPath();
+  if (!logoPath) {
+    return res.status(404).json({ message: 'לא הוגדר לוגו לסוכנות' });
+  }
+  res.setHeader('Cache-Control', 'no-store');
+  res.type(getAgencyLogoMime(logoPath));
+  res.sendFile(logoPath);
+});
+
+router.post('/api/agency/logo', requireManager, upload.single('logo'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'לא נבחר קובץ לוגו' });
+    }
+    const agency = saveAgencyLogoFromUpload(req.file.path, req.file.originalname);
+    res.json({ message: 'הלוגו נשמר', agency });
+  } catch (error) {
+    res.status(400).json({ message: translateError(error) });
+  }
+});
+
+router.delete('/api/agency/logo', requireManager, (_req, res) => {
+  try {
+    const agency = removeAgencyLogo();
+    res.json({ message: 'הלוגו הוסר — המסמכים יציגו את שם הסוכנות', agency });
+  } catch (error) {
+    res.status(400).json({ message: translateError(error) });
+  }
+});
+
 router.get('/api/agency', (req, res) => {
   try {
-    const payload = { agency: getAgency() };
+    const payload = { agency: toPublicAgency(getAgency()) };
     if (req.permissions?.canAccessAgency) {
       payload.db = getLocalDbInfo();
       payload.leads = getStats();

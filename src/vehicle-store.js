@@ -191,6 +191,12 @@ function saveDb(db) {
   writeJson(VEHICLES_FILE, db);
 }
 
+function afterVehicleChange(vehicleId, action = 'upsert') {
+  import('./sync/vehicle-sync.js')
+    .then((m) => m.enqueueVehicleSync(vehicleId, action))
+    .catch(() => {});
+}
+
 export function getAllVehicles() {
   return loadDb().vehicles;
 }
@@ -234,6 +240,7 @@ export function createVehicle(input = {}) {
   db.vehicles.push(vehicle);
   saveDb(db);
   fs.mkdirSync(getVehicleDocsDir(vehicle.id), { recursive: true });
+  afterVehicleChange(vehicle.id, 'upsert');
   return vehicle;
 }
 
@@ -255,6 +262,7 @@ export function updateVehicle(id, patch = {}) {
   next.updatedAt = timestamp();
   db.vehicles[idx] = next;
   saveDb(db);
+  afterVehicleChange(next.id, 'upsert');
   return next;
 }
 
@@ -264,6 +272,7 @@ export function deleteVehicle(id) {
   db.vehicles = db.vehicles.filter((v) => v.id !== id);
   if (db.vehicles.length === before) return false;
   saveDb(db);
+  afterVehicleChange(id, 'delete');
   return true;
 }
 
@@ -324,6 +333,7 @@ export function upsertVehicles(importedVehicles) {
 
   let added = 0;
   let updated = 0;
+  const changedIds = [];
 
   for (const item of importedVehicles) {
     const key = String(item.systemId);
@@ -337,6 +347,7 @@ export function upsertVehicles(importedVehicles) {
         photos: existing.photos || [],
       });
       updated += 1;
+      changedIds.push(existing.id);
     } else {
       const vehicle = {
         ...item,
@@ -348,10 +359,12 @@ export function upsertVehicles(importedVehicles) {
       db.vehicles.push(vehicle);
       bySystemId.set(key, vehicle);
       added += 1;
+      changedIds.push(vehicle.id);
     }
   }
 
   saveDb(db);
+  for (const id of changedIds) afterVehicleChange(id, 'upsert');
   return { added, updated, total: db.vehicles.length };
 }
 
@@ -596,6 +609,7 @@ export function addVehiclePhotos(vehicleId, files) {
 
   vehicle.updatedAt = timestamp();
   saveDb(db);
+  afterVehicleChange(vehicleId, 'upsert');
   return { vehicle, added };
 }
 
@@ -638,6 +652,7 @@ export function addVehiclePhotosFromBuffers(vehicleId, items = []) {
 
   vehicle.updatedAt = timestamp();
   saveDb(db);
+  afterVehicleChange(vehicleId, 'upsert');
   return { vehicle, added };
 }
 
@@ -662,6 +677,7 @@ export function removeVehiclePhoto(vehicleId, photoId) {
   vehicle.photos = photos.filter((p) => p.id !== photoId);
   vehicle.updatedAt = timestamp();
   saveDb(db);
+  afterVehicleChange(vehicleId, 'upsert');
   return vehicle;
 }
 

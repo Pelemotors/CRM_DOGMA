@@ -15,6 +15,7 @@ export function ensureLocalDirs() {
   fs.mkdirSync(LOCAL_EXPORTS_DIR, { recursive: true });
   fs.mkdirSync(LOCAL_CONFIG_DIR, { recursive: true });
   fs.mkdirSync(VEHICLE_MEDIA_DIR, { recursive: true });
+  fs.mkdirSync(path.join(DATA_DIR, 'branding'), { recursive: true });
 
   if (!fs.existsSync(LOCAL_DB_FILE)) {
     writeJson(LOCAL_DB_FILE, { version: 2, updatedAt: null, leads: [] });

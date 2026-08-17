@@ -208,7 +208,8 @@ export function isPublicApiPath(pathname, method) {
   if (pathOnly === '/api/auth/login' && m === 'POST') return true;
   if (pathOnly === '/api/auth/logout' && m === 'POST') return true;
   if (pathOnly === '/api/auth/me' && m === 'GET') return true;
+  if (pathOnly === '/api/agency/branding' && m === 'GET') return true;
+  if (pathOnly === '/api/agency/logo' && m === 'GET') return true;
+  if (pathOnly === '/api/webhooks/website-lead' && m === 'POST') return true;
   return false;
 }
-
-export { COOKIE_NAME };

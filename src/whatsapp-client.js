@@ -2,6 +2,7 @@ import qrcode from 'qrcode-terminal';
 import whatsapp from 'whatsapp-web.js';
 import QRCode from 'qrcode';
 import { logLive } from './server/live-log.js';
+import { resolveChromeExecutable } from './scrapers/shared.js';
 
 const { Client, LocalAuth, MessageMedia } = whatsapp;
 
@@ -111,23 +112,35 @@ export function onStatusChange(callback) {
   return () => globalListeners.delete(callback);
 }
 
-function createClient(userId) {
+async function buildPuppeteerOptions() {
+  const executablePath = await resolveChromeExecutable();
+  const opts = {
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+    ],
+  };
+  if (executablePath) {
+    opts.executablePath = executablePath;
+  } else {
+    opts.channel = 'chrome';
+  }
+  return opts;
+}
+
+async function createClient(userId) {
   installEbusyGuard();
   const safeId = String(userId).replace(/[^a-zA-Z0-9_-]/g, '_');
+  const puppeteer = await buildPuppeteerOptions();
   return new Client({
     authStrategy: new LocalAuth({
       clientId: safeId,
       dataPath: '.wwebjs_auth',
     }),
-    puppeteer: {
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-      ],
-    },
+    puppeteer,
   });
 }
 
@@ -174,10 +187,10 @@ function attachClientEvents(userId, session, waClient) {
   });
 }
 
-function getWhatsAppClient(userId) {
+async function getWhatsAppClient(userId) {
   const { id, session } = getSession(userId);
   if (!session.client) {
-    session.client = createClient(id);
+    session.client = await createClient(id);
     attachClientEvents(id, session, session.client);
   }
   return session.client;
@@ -185,7 +198,7 @@ function getWhatsAppClient(userId) {
 
 export async function waitForReady(userId) {
   const { id, session } = getSession(userId);
-  const waClient = getWhatsAppClient(id);
+  const waClient = await getWhatsAppClient(id);
 
   if (waClient.info) {
     setConnectionState(id, session, 'ready');

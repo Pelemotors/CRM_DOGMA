@@ -1,0 +1,7 @@
+{
+  "revalidateUrl": "",
+  "revalidateSecret": "",
+  "websiteLeadApiKey": "",
+  "agencyWebsiteUrl": "https://t-a-motors.co.il",
+  "crmPublicUrl": "http://localhost:3001"
+}

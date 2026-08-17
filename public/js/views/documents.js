@@ -229,7 +229,7 @@ export async function renderDocuments(root) {
           `<option value="">בחר דגם</option>` +
           items
             .map((m) => {
-              const name = typeof m === 'string' ? m : m.name || '';
+              const name = typeof m === 'string' ? m : m.model || m.name || '';
               return `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`;
             })
             .join('');
